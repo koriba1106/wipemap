@@ -1,0 +1,1810 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WipeMap Studio Pro — 旅番組ワイプ地図制作システム</title>
+  <!-- Leaflet (範囲指定モーダル用) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+  <!-- D3.js (GeoJSON投影・ベクター生成) -->
+  <script src="https://d3js.org/d3.v7.min.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      /* 人間工学に基づく薄グレー（ニュートラルライトグレー）基調のカラーシステム */
+      --bg-app: #f3f4f6;
+      --bg-workspace: #e5e7eb;
+      --bg-panel: #ffffff;
+      --bg-subtle: #f9fafb;
+      --bg-hover: #f3f4f6;
+      --bg-active: #e0e7ff;
+      --border-light: #e5e7eb;
+      --border-medium: #d1d5db;
+      --text-primary: #1f2937;
+      --text-secondary: #4b5563;
+      --text-muted: #9ca3af;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --danger: #ef4444;
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+      --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", sans-serif;
+      background: var(--bg-app);
+      color: var(--text-primary);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* 1. トップヘッダー (高さ48px・最小限のグローバル操作) */
+    .topbar {
+      height: 48px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border-light);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      z-index: 20;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+    .brand-badge {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-medium);
+      color: var(--text-secondary);
+      font-size: 0.72rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 汎用ボタン */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.82rem;
+      font-weight: 600;
+      border: 1px solid var(--border-medium);
+      background: var(--bg-panel);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn:hover:not(:disabled) {
+      background: var(--bg-hover);
+      border-color: #9ca3af;
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+    .btn-danger {
+      color: var(--danger);
+      border-color: #fecaca;
+      background: #fef2f2;
+    }
+    .btn-danger:hover:not(:disabled) {
+      background: #fee2e2;
+    }
+
+    /* 2. メインワークスペース (左ツールレール + 中央キャンバス + 右インスペクター) */
+    .main-area {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      position: relative;
+    }
+
+    /* 左ツールレール (56px) */
+    .tool-rail {
+      width: 56px;
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border-light);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 0;
+      gap: 8px;
+      z-index: 10;
+    }
+    .rail-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-md);
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-secondary);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-size: 1.05rem;
+    }
+    .rail-btn span {
+      font-size: 0.6rem;
+      font-weight: 600;
+    }
+    .rail-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+    .rail-btn.active {
+      background: var(--bg-active);
+      color: var(--accent);
+      border-color: #c7d2fe;
+    }
+    .rail-divider {
+      width: 28px;
+      height: 1px;
+      background: var(--border-light);
+      margin: 4px 0;
+    }
+
+    /* 中央キャンバス領域 (目に優しい薄グレー背景) */
+    .canvas-stage {
+      flex: 1;
+      background: var(--bg-workspace);
+      background-image: radial-gradient(#d1d5db 1px, transparent 1px);
+      background-size: 20px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      padding: 24px 24px 84px 24px;
+    }
+
+    /* テレビワイプ枠エミュレータ */
+    .wipe-frame {
+      width: 100%;
+      max-width: 780px;
+      aspect-ratio: 16 / 10;
+      background: #f6f5f0;
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg), 0 0 0 6px #ffffff, 0 0 0 7px var(--border-medium);
+      overflow: hidden;
+      position: relative;
+    }
+    #wipe-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+
+    /* キャンバス左上のモードピル */
+    .canvas-hud {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(6px);
+      border: 1px solid var(--border-light);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      box-shadow: var(--shadow-sm);
+      pointer-events: none;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+    }
+    .status-dot.busy {
+      background: #f59e0b;
+      animation: blink 0.9s infinite alternate;
+    }
+    @keyframes blink { from { opacity: 0.3; } to { opacity: 1; } }
+
+    /* 下部フローティング・アニメーション再生ドック */
+    .playback-dock {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border-medium);
+      border-radius: 999px;
+      padding: 6px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: var(--shadow-md);
+      z-index: 15;
+    }
+    .dock-slider {
+      width: 180px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .dock-select {
+      height: 28px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-medium);
+      background: var(--bg-subtle);
+      color: var(--text-primary);
+      font-size: 0.78rem;
+      padding: 0 8px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    /* 3. 右インスペクターパネル (幅310px・スッキリしたアコーディオン/セクション構造) */
+    .inspector {
+      width: 310px;
+      background: var(--bg-panel);
+      border-left: 1px solid var(--border-light);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      z-index: 10;
+    }
+    .inspector-section {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-light);
+    }
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 10px;
+    }
+    .form-row:last-child { margin-bottom: 0; }
+    .form-label {
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+      display: flex;
+      justify-content: space-between;
+    }
+    .form-input, .form-select {
+      width: 100%;
+      height: 32px;
+      padding: 0 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-medium);
+      background: var(--bg-subtle);
+      color: var(--text-primary);
+      font-size: 0.82rem;
+    }
+    .form-input:focus, .form-select:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: #fff;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .preset-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .preset-chip {
+      padding: 7px 8px;
+      font-size: 0.75rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-light);
+      background: var(--bg-subtle);
+      color: var(--text-primary);
+      cursor: pointer;
+      text-align: left;
+      font-weight: 500;
+      transition: all 0.12s;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .preset-chip:hover {
+      background: var(--bg-hover);
+      border-color: var(--border-medium);
+    }
+    .preset-chip.active {
+      background: var(--bg-active);
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* レイヤーピル切り替え */
+    .layer-toggles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .layer-pill {
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 0.74rem;
+      font-weight: 500;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-medium);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .layer-pill.active {
+      background: #eff6ff;
+      border-color: #93c5fd;
+      color: #1d4ed8;
+      font-weight: 600;
+    }
+
+    /* 4. 地図範囲切り出しモーダル (必要な時だけ呼び出す人間工学設計) */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(17, 24, 39, 0.45);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 24px;
+    }
+    .modal-backdrop.open {
+      display: flex;
+    }
+    .modal-card {
+      width: 100%;
+      max-width: 860px;
+      height: 78vh;
+      background: var(--bg-panel);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid var(--border-light);
+    }
+    .modal-header {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border-light);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-subtle);
+    }
+    .modal-body {
+      flex: 1;
+      position: relative;
+    }
+    #leaflet-map {
+      width: 100%;
+      height: 100%;
+    }
+    .map-crop-guide {
+      position: absolute;
+      inset: 36px 60px;
+      border: 2px dashed #2563eb;
+      border-radius: 8px;
+      box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.22);
+      pointer-events: none;
+      z-index: 500;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-end;
+      padding: 8px;
+    }
+    .map-crop-guide span {
+      background: rgba(37, 99, 235, 0.9);
+      color: #fff;
+      font-size: 0.72rem;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .modal-footer {
+      padding: 12px 18px;
+      border-top: 1px solid var(--border-light);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-panel);
+    }
+
+    /* SVG内のインタラクティブ要素カーソル */
+    .draggable-label { cursor: grab; }
+    .draggable-label:active { cursor: grabbing; }
+    .draggable-label.selected .selection-ring {
+      stroke: #3b82f6;
+      stroke-width: 2px;
+      stroke-dasharray: 4 3;
+      fill: rgba(59, 130, 246, 0.06);
+    }
+    .route-vertex {
+      cursor: move;
+      transition: r 0.12s;
+    }
+    .route-vertex:hover { r: 8px; }
+
+    /* ==========================================================
+       7種類の現在地アニメーション定義 (SVG/CSSキーフレーム)
+       ========================================================== */
+    /* 1. レーダー波紋 */
+    @keyframes anim-pulse-ring {
+      0% { transform: scale(0.4); opacity: 0.95; }
+      100% { transform: scale(2.8); opacity: 0; }
+    }
+    .marker-pulse-1 { animation: anim-pulse-ring 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite; transform-box: fill-box; transform-origin: center; }
+    .marker-pulse-2 { animation: anim-pulse-ring 1.8s cubic-bezier(0.16, 1, 0.3, 1) 0.6s infinite; transform-box: fill-box; transform-origin: center; }
+
+    /* 2. バウンスピン */
+    @keyframes anim-bounce-pin {
+      0%, 100% { transform: translateY(0) scaleY(1); }
+      45% { transform: translateY(-16px) scaleY(1.06); }
+      75% { transform: translateY(0) scaleY(0.92); }
+    }
+    @keyframes anim-bounce-shadow {
+      0%, 100% { transform: scale(1); opacity: 0.45; }
+      45% { transform: scale(0.55); opacity: 0.2; }
+    }
+    .marker-bounce-body { animation: anim-bounce-pin 0.95s ease-in-out infinite; }
+    .marker-bounce-shadow { animation: anim-bounce-shadow 0.95s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+
+    /* 3. トコトコ歩行 */
+    @keyframes anim-walk-wobble {
+      0%, 100% { transform: translateY(0) rotate(-9deg); }
+      50% { transform: translateY(-6px) rotate(9deg); }
+    }
+    .marker-walk-body { animation: anim-walk-wobble 0.55s ease-in-out infinite; transform-box: fill-box; transform-origin: bottom center; }
+
+    /* 4. 回転スター */
+    @keyframes anim-star-spin {
+      0% { transform: rotate(0deg) scale(0.92); }
+      50% { transform: rotate(180deg) scale(1.15); }
+      100% { transform: rotate(360deg) scale(0.92); }
+    }
+    .marker-star-body { animation: anim-star-spin 2.6s linear infinite; transform-box: fill-box; transform-origin: center; }
+
+    /* 5. 鼓動ハート */
+    @keyframes anim-heart-beat {
+      0%, 100% { transform: scale(1); }
+      15% { transform: scale(1.3); }
+      30% { transform: scale(0.95); }
+      45% { transform: scale(1.22); }
+    }
+    .marker-heart-body { animation: anim-heart-beat 1.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+
+    /* 6. 方位コンパス */
+    @keyframes anim-compass-needle {
+      0%, 100% { transform: rotate(-28deg); }
+      40% { transform: rotate(32deg); }
+      75% { transform: rotate(-12deg); }
+    }
+    .marker-compass-needle { animation: anim-compass-needle 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+
+    /* 7. フラッグ揺れ */
+    @keyframes anim-flag-wave {
+      0%, 100% { transform: rotate(-6deg) skewX(0deg); }
+      50% { transform: rotate(8deg) skewX(-8deg); }
+    }
+    .marker-flag-body { animation: anim-flag-wave 0.9s ease-in-out infinite; transform-box: fill-box; transform-origin: bottom left; }
+  </style>
+</head>
+<body>
+
+  <!-- 1. トップバー（薄グレー＆白基調のクリーンなヘッダー） -->
+  <header class="topbar">
+    <div class="brand">
+      <span>🗺️ WipeMap Studio</span>
+      <span class="brand-badge" id="scale-indicator">中域・市区モード (Z:13)</span>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn" id="btn-open-map" title="地図から切り出し範囲を指定">
+        📍 地図範囲を選択・切り出し
+      </button>
+      <button class="btn" id="btn-auto-labels" title="ベクトルタイルから地名・駅名を自動抽出">
+        ✨ 主要地名を自動配置
+      </button>
+      <button class="btn btn-primary" id="btn-export-svg">
+        💾 SVG書き出し
+      </button>
+    </div>
+  </header>
+
+  <!-- 2. メイン3ペイン領域 -->
+  <div class="main-area">
+    <!-- 左ツールレール -->
+    <nav class="tool-rail" aria-label="編集ツール">
+      <button class="rail-btn active" data-tool="select" title="選択・移動モード">
+        🖱️<span>選択</span>
+      </button>
+      <button class="rail-btn" data-tool="add-label" title="キャンバスをクリックして地名ラベル追加">
+        🏷️<span>ラベル</span>
+      </button>
+      <button class="rail-btn" data-tool="draw-route" title="キャンバスをクリックして散策ルート描画">
+        ✏️<span>ルート</span>
+      </button>
+      <div class="rail-divider"></div>
+      <button class="rail-btn" id="btn-center-map" title="地図範囲選択モーダルを開く">
+        🌐<span>範囲</span>
+      </button>
+    </nav>
+
+    <!-- 中央キャンバス -->
+    <main class="canvas-stage">
+      <div class="canvas-hud">
+        <span class="status-dot" id="hud-dot"></span>
+        <span id="hud-text">選択モード：ラベルやルート頂点をドラッグして調整できます</span>
+      </div>
+
+      <div class="wipe-frame" id="wipe-frame">
+        <svg id="wipe-svg" viewBox="0 0 800 500" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+
+      <!-- 下部フローティング再生ドック (7種アニメーション切り替え) -->
+      <div class="playback-dock">
+        <button class="btn btn-primary" id="btn-play-toggle" style="height:28px; padding:0 12px;">
+          ▶ 再生
+        </button>
+        <input type="range" id="route-progress" class="dock-slider" min="0" max="1000" value="1000" title="ルート進行度">
+        <select id="anim-type-select" class="dock-select" title="現在地アニメーション (7種類)">
+          <option value="pulse">① レーダー波紋 (パルス)</option>
+          <option value="bounce">② バウンスピン (弾むピン)</option>
+          <option value="walk">③ トコトコ歩行 (ウォーク)</option>
+          <option value="star">④ 回転スター (注目星)</option>
+          <option value="heart">⑤ 鼓動ハート (名所・グルメ)</option>
+          <option value="compass">⑥ 方位コンパス (探索スイング)</option>
+          <option value="flag">⑦ フラッグ揺れ (ゴール旗)</option>
+        </select>
+        <select id="anim-speed-select" class="dock-select" title="再生速度">
+          <option value="0.6">0.6x</option>
+          <option value="1" selected>1.0x</option>
+          <option value="1.8">1.8x</option>
+          <option value="3">3.0x</option>
+        </select>
+      </div>
+    </main>
+
+    <!-- 右インスペクター (人間工学に基づき3セクションに整理) -->
+    <aside class="inspector">
+      <!-- セクションA: 線画レイヤーと配色 -->
+      <div class="inspector-section">
+        <div class="section-title">
+          <span>線画レイヤー・配色</span>
+          <select id="theme-select" class="dock-select" style="height:24px; font-size:0.72rem;">
+            <option value="tv-ivory">テレビ標準 (アイボリー)</option>
+            <option value="soft-gray">モダン薄グレー</option>
+            <option value="pastel-walk">街歩きパステル</option>
+            <option value="retro-map">古地図・和風トーン</option>
+          </select>
+        </div>
+        <div class="layer-toggles" id="layer-toggles">
+          <button type="button" class="layer-pill active" data-layer="coast">海岸・河川</button>
+          <button type="button" class="layer-pill active" data-layer="border">市区境界</button>
+          <button type="button" class="layer-pill active" data-layer="majorRoad">幹線道路</button>
+          <button type="button" class="layer-pill active" data-layer="minorRoad">地域道路</button>
+          <button type="button" class="layer-pill active" data-layer="bridge">橋梁強調</button>
+          <button type="button" class="layer-pill active" data-layer="rail">鉄道</button>
+        </div>
+      </div>
+
+      <!-- セクションB: 地名・ランドマークラベル編集 (7種プリセット) -->
+      <div class="inspector-section" id="label-inspector-section">
+        <div class="section-title">
+          <span>地名・スポットラベル</span>
+          <button class="btn" id="btn-new-label" style="height:24px; padding:0 8px; font-size:0.72rem;">＋ 追加</button>
+        </div>
+
+        <div class="form-row">
+          <span class="form-label">テレビ番組風プリセット (7種)</span>
+          <div class="preset-grid" id="preset-grid">
+            <button type="button" class="preset-chip active" data-preset="outline">① 太字白フチ文字</button>
+            <button type="button" class="preset-chip" data-preset="callout">② 吹き出しプレート</button>
+            <button type="button" class="preset-chip" data-preset="numbered">③ 丸番号スポット</button>
+            <button type="button" class="preset-chip" data-preset="station">④ 駅・施設看板</button>
+            <button type="button" class="preset-chip" data-preset="ribbon">⑤ 番組コーナー帯</button>
+            <button type="button" class="preset-chip" data-preset="wood">⑥ 老舗・木製看板風</button>
+            <button type="button" class="preset-chip" data-preset="badge" style="grid-column: span 2;">⑦ エリア強調カプセルバッジ</button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label" for="lbl-text">表示テキスト</label>
+          <input type="text" id="lbl-text" class="form-input" maxlength="40" placeholder="地名やスポット名を入力">
+        </div>
+
+        <div class="grid-2 form-row">
+          <div>
+            <label class="form-label" for="lbl-sub">番号/サブ文字</label>
+            <input type="text" id="lbl-sub" class="form-input" maxlength="6" placeholder="①, 駅, スタート">
+          </div>
+          <div>
+            <label class="form-label" for="lbl-color">アクセント色</label>
+            <input type="color" id="lbl-color" class="form-input" value="#1f2937" style="padding:2px 4px;">
+          </div>
+        </div>
+
+        <div class="grid-2 form-row">
+          <div>
+            <label class="form-label">サイズ <span id="lbl-size-val">18px</span></label>
+            <input type="range" id="lbl-size" min="11" max="38" value="18" style="width:100%;">
+          </div>
+          <div>
+            <label class="form-label">角度 <span id="lbl-rot-val">0°</span></label>
+            <input type="range" id="lbl-rot" min="-45" max="45" value="0" style="width:100%;">
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-top:8px;">
+          <button type="button" class="btn btn-danger" id="btn-delete-label" style="width:100%; height:28px;">
+            選択中のラベルを削除
+          </button>
+        </div>
+      </div>
+
+      <!-- セクションC: 散策ルート設定 -->
+      <div class="inspector-section">
+        <div class="section-title">
+          <span>散策ルート設定</span>
+          <span id="route-count-badge" style="font-size:0.72rem; color:var(--text-muted);">5 頂点</span>
+        </div>
+
+        <div class="grid-2 form-row">
+          <div>
+            <label class="form-label" for="route-style">線スタイル</label>
+            <select id="route-style" class="form-select">
+              <option value="dashed">旅番組風 赤破線</option>
+              <option value="solid">強調オレンジ実線</option>
+              <option value="dots">足跡風ドットライン</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" for="route-curve">補間</label>
+            <select id="route-curve" class="form-select">
+              <option value="catmull">なめらか曲線</option>
+              <option value="linear">直線（折れ線）</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid-2 form-row">
+          <div>
+            <label class="form-label" for="route-color">ルート色</label>
+            <input type="color" id="route-color" class="form-input" value="#ef4444" style="padding:2px 4px;">
+          </div>
+          <div>
+            <label class="form-label">太さ <span id="route-width-val">6px</span></label>
+            <input type="range" id="route-width" min="3" max="12" value="6" style="width:100%;">
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-top:8px;">
+          <button type="button" class="btn" id="btn-undo-route" style="height:28px;">1点戻す</button>
+          <button type="button" class="btn btn-danger" id="btn-clear-route" style="height:28px;">ルート消去</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 3. 地図範囲選択モーダル (国土地理院タイル) -->
+  <div class="modal-backdrop" id="map-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <strong id="modal-title" style="font-size:0.92rem;">国土地理院マップから切り出し範囲を指定</strong>
+          <span style="font-size:0.76rem; color:var(--text-secondary); margin-left:10px;">
+            島全体（ズーム9〜11）から街角・橋（ズーム15〜16）まで自動最適化されます
+          </span>
+        </div>
+        <button class="btn" id="btn-close-modal" style="height:28px;">✕ 閉じる</button>
+      </div>
+      <div class="modal-body">
+        <div id="leaflet-map"></div>
+        <div class="map-crop-guide">
+          <span id="modal-zoom-badge">切り出し枠 (16:10)</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div style="font-size:0.78rem; color:var(--text-secondary);" id="modal-status">
+          枠内に収めたい地域を表示して「この範囲を線画化」を押してください
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" id="btn-preset-island">🏝️ 島・広域サンプル</button>
+          <button class="btn" id="btn-preset-town">🌉 河川・街歩きサンプル</button>
+          <button class="btn btn-primary" id="btn-execute-extract">🔄 この範囲を線画化</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { VectorTile } from 'https://esm.sh/@mapbox/vector-tile@1.3.1';
+    import Pbf from 'https://esm.sh/pbf@3.2.1';
+
+    /* =========================================================================
+       1. メモリ管理・通信堅牢性モジュール (LRU Cache + 並列制限 + Timeout)
+       ========================================================================= */
+    class TileCacheLRU {
+      constructor(limit = 64) {
+        this.limit = limit;
+        this.cache = new Map();
+      }
+      get(key) {
+        if (!this.cache.has(key)) return null;
+        const val = this.cache.get(key);
+        this.cache.delete(key);
+        this.cache.set(key, val);
+        return val;
+      }
+      set(key, val) {
+        if (this.cache.has(key)) this.cache.delete(key);
+        else if (this.cache.size >= this.limit) {
+          const oldestKey = this.cache.keys().next().value;
+          this.cache.delete(oldestKey);
+        }
+        this.cache.set(key, val);
+      }
+    }
+
+    const tileCache = new TileCacheLRU(64);
+    let currentAbortController = null;
+
+    async function fetchTileWithTimeout(url, signal, timeoutMs = 8000) {
+      const cached = tileCache.get(url);
+      if (cached) return cached;
+
+      const timeoutCtrl = new AbortController();
+      const timer = setTimeout(() => timeoutCtrl.abort(), timeoutMs);
+      const onParentAbort = () => timeoutCtrl.abort();
+      signal.addEventListener('abort', onParentAbort, { once: true });
+
+      try {
+        const res = await fetch(url, { signal: timeoutCtrl.signal });
+        if (!res.ok) return null;
+        const buf = await res.arrayBuffer();
+        tileCache.set(url, buf);
+        return buf;
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', onParentAbort);
+      }
+    }
+
+    async function runWithConcurrency(tasks, concurrency = 6) {
+      const results = [];
+      let index = 0;
+      async function worker() {
+        while (index < tasks.length) {
+          const cur = index++;
+          results[cur] = await tasks[cur]();
+        }
+      }
+      const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker());
+      await Promise.all(workers);
+      return results;
+    }
+
+    /* =========================================================================
+       2. アプリケーション状態管理 (State)
+       ========================================================================= */
+    const THEMES = {
+      'tv-ivory': { land: '#f6f5f0', water: '#a8d8f8', waterStroke: '#6eb4e6', majorRoad: '#fde047', majorCase: '#d97706', minorRoad: '#ffffff', minorCase: '#d1cfc9', border: '#94a3b8' },
+      'soft-gray': { land: '#f3f4f6', water: '#cbd5e1', waterStroke: '#94a3b8', majorRoad: '#ffffff', majorCase: '#64748b', minorRoad: '#f8fafc', minorCase: '#cbd5e1', border: '#9ca3af' },
+      'pastel-walk': { land: '#fef9f5', water: '#bae6fd', waterStroke: '#7dd3fc', majorRoad: '#fed7aa', majorCase: '#ea580c', minorRoad: '#ffffff', minorCase: '#e5e7eb', border: '#a1a1aa' },
+      'retro-map': { land: '#efe8d8', water: '#9bc1bc', waterStroke: '#6b9ac4', majorRoad: '#f4a261', majorCase: '#8d5b4c', minorRoad: '#faf6f0', minorCase: '#cbbca6', border: '#8c7a6b' }
+    };
+
+    const state = {
+      tool: 'select', // 'select' | 'add-label' | 'draw-route'
+      theme: 'tv-ivory',
+      layers: { coast: true, border: true, majorRoad: true, minorRoad: true, bridge: true, rail: true },
+      mapGeoData: null, // 抽出済みベクターデータ
+      labels: [
+        { id: 'lbl-1', x: 240, y: 155, text: 'スタート地点', sub: '①', preset: 'numbered', color: '#dc2626', size: 18, rot: 0 },
+        { id: 'lbl-2', x: 420, y: 245, text: '名物商店街', sub: '散策', preset: 'callout', color: '#2563eb', size: 17, rot: 0 },
+        { id: 'lbl-3', x: 585, y: 195, text: '大橋展望スポット', sub: '絶景', preset: 'ribbon', color: '#059669', size: 18, rot: 0 }
+      ],
+      selectedLabelId: 'lbl-1',
+      routePoints: [
+        [240, 185], [315, 225], [420, 265], [510, 235], [585, 215]
+      ],
+      routeConfig: {
+        style: 'dashed',
+        curve: 'catmull',
+        color: '#ef4444',
+        width: 6
+      },
+      playback: {
+        playing: false,
+        progress: 1.0, // 0.0 ~ 1.0
+        animType: 'pulse', // 7種
+        speed: 1.0,
+        rafId: null,
+        lastTimestamp: 0
+      }
+    };
+
+    /* =========================================================================
+       3. SVGレイヤー構造の初期化 (再描画コストを最小化する分離構造)
+       ========================================================================= */
+    const svg = d3.select('#wipe-svg');
+    const SVG_W = 800;
+    const SVG_H = 500;
+
+    const gBaseBg = svg.append('rect').attr('width', SVG_W).attr('height', SVG_H).attr('fill', THEMES[state.theme].land);
+    const gMapVector = svg.append('g').attr('id', 'layer-map-vector');
+    const gRoute = svg.append('g').attr('id', 'layer-route');
+    const gLabels = svg.append('g').attr('id', 'layer-labels');
+    const gMarker = svg.append('g').attr('id', 'layer-current-marker');
+    const gCredit = svg.append('g').attr('id', 'layer-credit');
+
+    // クレジット表記（国土地理院規約準拠）
+    gCredit.append('rect')
+      .attr('x', SVG_W - 108).attr('y', SVG_H - 24)
+      .attr('width', 100).attr('height', 18).attr('rx', 4)
+      .attr('fill', 'rgba(255,255,255,0.78)');
+    gCredit.append('text')
+      .attr('x', SVG_W - 58).attr('y', SVG_H - 11)
+      .attr('text-anchor', 'middle').attr('font-size', '10px').attr('fill', '#4b5563').attr('font-weight', '600')
+      .text('出典：国土地理院');
+
+    /* =========================================================================
+       4. 地図切り出しエンジン (国土地理院 最適化ベクトルタイル)
+       ========================================================================= */
+    function lon2tile(lon, z) { return Math.floor((lon + 180) / 360 * Math.pow(2, z)); }
+    function lat2tile(lat, z) {
+      return Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z));
+    }
+
+    function getOptimalTileConfig(mapZoom) {
+      if (mapZoom <= 11) return { tileZoom: Math.max(8, Math.min(11, mapZoom)), label: `広域・島全体モード (Z:${mapZoom})` };
+      if (mapZoom <= 14) return { tileZoom: mapZoom, label: `中域・市区モード (Z:${mapZoom})` };
+      return { tileZoom: 16, label: `詳細・街歩きモード (Z:16)` };
+    }
+
+    async function extractVectorMapFromBounds(bounds, mapZoom) {
+      if (currentAbortController) currentAbortController.abort();
+      currentAbortController = new AbortController();
+      const { signal } = currentAbortController;
+
+      setHudStatus('国土地理院ベクトルタイルを取得・線画化しています...', true);
+
+      const minLng = bounds.getWest(), maxLng = bounds.getEast();
+      const minLat = bounds.getSouth(), maxLat = bounds.getNorth();
+      const { tileZoom, label } = getOptimalTileConfig(mapZoom);
+      document.getElementById('scale-indicator').textContent = label;
+
+      let activeZoom = tileZoom;
+      let minX = lon2tile(minLng, activeZoom), maxX = lon2tile(maxLng, activeZoom);
+      let minY = lat2tile(maxLat, activeZoom), maxY = lat2tile(minLat, activeZoom);
+
+      // タイル数が25枚を超える場合は自動で1段階広域のタイルへフォールバックしメモリを保護
+      while ((maxX - minX + 1) * (maxY - minY + 1) > 25 && activeZoom > 8) {
+        activeZoom--;
+        minX = lon2tile(minLng, activeZoom);
+        maxX = lon2tile(maxLng, activeZoom);
+        minY = lat2tile(maxLat, activeZoom);
+        maxY = lat2tile(minLat, activeZoom);
+      }
+
+      const tasks = [];
+      for (let x = minX; x <= maxX; x++) {
+        for (let y = minY; y <= maxY; y++) {
+          const url = `https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/${activeZoom}/${x}/${y}.pbf`;
+          tasks.push(async () => {
+            const buf = await fetchTileWithTimeout(url, signal);
+            return buf ? { x, y, buf } : null;
+          });
+        }
+      }
+
+      const rawTiles = (await runWithConcurrency(tasks, 6)).filter(Boolean);
+      if (signal.aborted) return;
+
+      const categorized = {
+        waterArea: [],
+        coastline: [],
+        borders: [],
+        majorRoads: [],
+        minorRoads: [],
+        bridges: [],
+        railways: [],
+        poiLabels: []
+      };
+
+      for (const { x, y, buf } of rawTiles) {
+        let tile;
+        try {
+          tile = new VectorTile(new Pbf(buf));
+        } catch {
+          continue;
+        }
+        for (const layerName of Object.keys(tile.layers)) {
+          const layer = tile.layers[layerName];
+          const ln = layerName.toLowerCase();
+          for (let i = 0; i < layer.length; i++) {
+            const feat = layer.feature(i);
+            const props = feat.properties || {};
+            const geo = feat.toGeoJSON(x, y, activeZoom);
+
+            if (ln.includes('wa') || ln.includes('water') || ln.includes('coastline') || ln.includes('rvrcl') || ln.includes('wl')) {
+              if (geo.geometry.type.includes('Polygon')) categorized.waterArea.push(geo);
+              else categorized.coastline.push(geo);
+            } else if (ln.includes('bnd') || ln.includes('adm')) {
+              categorized.borders.push(geo);
+            } else if (ln.includes('rdcl') || ln.includes('road')) {
+              const rdCtg = props.rdCtg ?? props.ftCode;
+              const isBridge = (props.state === '橋・高架' || props.state === 1 || props.ftCode === 2703);
+              if (isBridge && activeZoom >= 14) categorized.bridges.push(geo);
+
+              const isMajor = activeZoom <= 13 || rdCtg === 0 || rdCtg === 1 ||
+                              String(props.rdCtg).includes('国道') || String(props.rdCtg).includes('県道') ||
+                              String(props.rdCtg).includes('高速');
+              if (isMajor) categorized.majorRoads.push(geo);
+              else categorized.minorRoads.push(geo);
+            } else if (ln.includes('rail')) {
+              categorized.railways.push(geo);
+            } else if ((ln.includes('label') || ln.includes('anno') || ln.includes('structure')) && geo.geometry.type === 'Point') {
+              const name = props.knj || props.name || props.dspName;
+              if (typeof name === 'string' && name.trim().length >= 2 && name.trim().length <= 12) {
+                categorized.poiLabels.push({
+                  name: name.trim(),
+                  coords: geo.geometry.coordinates,
+                  isStation: String(props.annoCtg || '').includes('駅') || name.endsWith('駅')
+                });
+              }
+            }
+          }
+        }
+      }
+
+      const projection = d3.geoMercator().fitExtent([[12, 12], [SVG_W - 12, SVG_H - 12]], {
+        type: 'FeatureCollection',
+        features: [
+          { type: 'Feature', geometry: { type: 'Point', coordinates: [minLng, minLat] } },
+          { type: 'Feature', geometry: { type: 'Point', coordinates: [maxLng, maxLat] } }
+        ]
+      });
+
+      state.mapGeoData = { categorized, projection };
+      renderMapVectorLayer();
+      setHudStatus(`線画生成完了（幹線道路:${categorized.majorRoads.length} / 地域道路:${categorized.minorRoads.length} / 橋:${categorized.bridges.length}）`, false);
+    }
+
+    function renderMapVectorLayer() {
+      const theme = THEMES[state.theme];
+      gBaseBg.attr('fill', theme.land);
+      gMapVector.selectAll('*').remove();
+
+      if (!state.mapGeoData) return;
+      const { categorized, projection } = state.mapGeoData;
+      const path = d3.geoPath().projection(projection);
+
+      // 1. 水域・海岸線・川
+      if (state.layers.coast) {
+        gMapVector.append('g').selectAll('path')
+          .data(categorized.waterArea).enter().append('path')
+          .attr('d', path).attr('fill', theme.water).attr('stroke', theme.waterStroke).attr('stroke-width', 1);
+
+        gMapVector.append('g').selectAll('path')
+          .data(categorized.coastline).enter().append('path')
+          .attr('d', path).attr('fill', 'none').attr('stroke', theme.waterStroke)
+          .attr('stroke-width', 2.2).attr('stroke-linecap', 'round');
+      }
+
+      // 2. 市区町村界
+      if (state.layers.border) {
+        gMapVector.append('g').selectAll('path')
+          .data(categorized.borders).enter().append('path')
+          .attr('d', path).attr('fill', 'none').attr('stroke', theme.border)
+          .attr('stroke-width', 1.4).attr('stroke-dasharray', '6,4');
+      }
+
+      // 3. 地域道路
+      if (state.layers.minorRoad) {
+        const gMinor = gMapVector.append('g');
+        gMinor.selectAll('.c').data(categorized.minorRoads).enter().append('path')
+          .attr('d', path).attr('fill', 'none').attr('stroke', theme.minorCase)
+          .attr('stroke-width', 4).attr('stroke-linecap', 'round');
+        gMinor.selectAll('.r').data(categorized.minorRoads).enter().append('path')
+          .attr('d', path).attr('fill', 'none').attr('stroke', theme.minorRoad)
+          .attr('stroke-width', 2.4).attr('stroke-linecap', 'round');
+      }
+
+      // 4. 幹線道路
+      if (state.layers.majorRoad) {
+        const gMajor = gMapVector.append('g');
+        gMajor.selectAll('.c').data(categorized.majorRoads).enter().append('path')
+          .attr('d', path).attr('fill', 'none').attr('stroke', theme.majorCase)
+          .attr('stroke-width', 5.8).attr('stroke-linecap', 'round');
+        gMajor.selectAll('.r').data(categorized.majorRoads).enter().append('path')
+          .attr('d', path).attr('fill', 'none').attr('stroke', theme.majorRoad)
+          .attr('stroke-width', 3.6).attr('stroke-linecap', 'round');
+      }
+
+      // 5. 橋梁強調
+      if (state.layers.bridge) {
+        const gBridge = gMapVector.append('g');
+        gBridge.selectAll('.b-rail').data(categorized.bridges).enter().append('path')
+          .attr('d', path).attr('fill', 'none').attr('stroke', '#334155')
+          .attr('stroke-width', 7.5).attr('stroke-linecap', 'butt');
+        gBridge.selectAll('.b-deck').data(categorized.bridges).enter().append('path')
+          .attr('d', path).attr('fill', 'none').attr('stroke', '#ffffff')
+          .attr('stroke-width', 4.2).attr('stroke-linecap', 'butt');
+      }
+
+      // 6. 鉄道
+      if (state.layers.rail) {
+        const gRail = gMapVector.append('g');
+        gRail.selectAll('.rb').data(categorized.railways).enter().append('path')
+          .attr('d', path).attr('fill', 'none').attr('stroke', '#475569').attr('stroke-width', 3.2);
+        gRail.selectAll('.rd').data(categorized.railways).enter().append('path')
+          .attr('d', path).attr('fill', 'none').attr('stroke', '#ffffff').attr('stroke-width', 1.8)
+          .attr('stroke-dasharray', '5,5');
+      }
+    }
+
+    /* =========================================================================
+       5. テレビ番組風ラベル描画エンジン (7種プリセット・XSS安全設計)
+       ========================================================================= */
+    function renderLabelsLayer() {
+      gLabels.selectAll('*').remove();
+
+      state.labels.forEach(item => {
+        const isSelected = item.id === state.selectedLabelId;
+        const group = gLabels.append('g')
+          .attr('class', `draggable-label ${isSelected ? 'selected' : ''}`)
+          .attr('transform', `translate(${item.x}, ${item.y}) rotate(${item.rot || 0})`)
+          .on('pointerdown', (event) => {
+            event.stopPropagation();
+            selectLabel(item.id);
+            startDragLabel(event, item);
+          });
+
+        const fontSize = Number(item.size) || 18;
+        const textStr = String(item.text || 'ラベル');
+        const subStr = String(item.sub || '');
+        const padX = Math.max(12, fontSize * 0.65);
+        const estWidth = Math.max(64, textStr.length * (fontSize * 0.96) + padX * 2);
+        const estHeight = fontSize * 1.9;
+
+        // 選択リング
+        if (isSelected) {
+          group.append('rect')
+            .attr('class', 'selection-ring')
+            .attr('x', -estWidth / 2 - 14)
+            .attr('y', -estHeight / 2 - 10)
+            .attr('width', estWidth + 28)
+            .attr('height', estHeight + 20)
+            .attr('rx', 8);
+        }
+
+        // プリセット別のシェイプ構築
+        switch (item.preset) {
+          case 'outline': {
+            // ① 太字白フチ文字
+            group.append('text')
+              .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+              .attr('font-size', fontSize).attr('font-weight', '900')
+              .attr('stroke', '#ffffff').attr('stroke-width', 6).attr('stroke-linejoin', 'round')
+              .text(textStr);
+            group.append('text')
+              .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+              .attr('font-size', fontSize).attr('font-weight', '900')
+              .attr('fill', item.color)
+              .text(textStr);
+            break;
+          }
+          case 'callout': {
+            // ② 吹き出しプレート
+            const w = estWidth, h = estHeight;
+            group.append('path')
+              .attr('d', `M ${-w/2},${-h/2} h ${w} a 6,6 0 0 1 6,6 v ${h-12} a 6,6 0 0 1 -6,6 h ${-w/2 + 8} l -8,10 l -8,-10 h ${-w/2 + 8} a 6,6 0 0 1 -6,-6 v ${-(h-12)} a 6,6 0 0 1 6,-6 z`)
+              .attr('fill', '#ffffff').attr('stroke', item.color).attr('stroke-width', 2.8);
+            group.append('text')
+              .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+              .attr('font-size', fontSize * 0.88).attr('font-weight', '800').attr('fill', item.color)
+              .text(textStr);
+            break;
+          }
+          case 'numbered': {
+            // ③ 丸番号スポット
+            const badgeR = fontSize * 0.72;
+            const totalW = estWidth + badgeR * 1.6;
+            group.append('rect')
+              .attr('x', -totalW / 2).attr('y', -estHeight / 2)
+              .attr('width', totalW).attr('height', estHeight).attr('rx', estHeight / 2)
+              .attr('fill', '#ffffff').attr('stroke', item.color).attr('stroke-width', 2.5);
+            group.append('circle')
+              .attr('cx', -totalW / 2 + badgeR + 4).attr('cy', 0).attr('r', badgeR)
+              .attr('fill', item.color);
+            group.append('text')
+              .attr('x', -totalW / 2 + badgeR + 4).attr('y', 0)
+              .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+              .attr('font-size', fontSize * 0.75).attr('font-weight', '900').attr('fill', '#ffffff')
+              .text(subStr || '①');
+            group.append('text')
+              .attr('x', badgeR * 0.55).attr('y', 0)
+              .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+              .attr('font-size', fontSize * 0.86).attr('font-weight', '800').attr('fill', '#1f2937')
+              .text(textStr);
+            break;
+          }
+          case 'station': {
+            // ④ 駅・施設看板
+            const w = estWidth + 12, h = estHeight + 4;
+            group.append('rect')
+              .attr('x', -w / 2).attr('y', -h / 2).attr('width', w).attr('height', h).attr('rx', 4)
+              .attr('fill', '#ffffff').attr('stroke', '#1e3a8a').attr('stroke-width', 3);
+            group.append('rect')
+              .attr('x', -w / 2).attr('y', h / 2 - 6).attr('width', w).attr('height', 6)
+              .attr('fill', item.color);
+            group.append('text')
+              .attr('y', -2).attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+              .attr('font-size', fontSize * 0.86).attr('font-weight', '800').attr('fill', '#111827')
+              .text(textStr);
+            break;
+          }
+          case 'ribbon': {
+            // ⑤ 旅番組コーナーリボン（左アクセント帯付きテロップ）
+            const w = estWidth + 18, h = estHeight + 2;
+            group.append('rect')
+              .attr('x', -w / 2).attr('y', -h / 2).attr('width', w).attr('height', h).attr('rx', 4)
+              .attr('fill', '#ffffff').attr('stroke', '#cbd5e1').attr('stroke-width', 1.8);
+            group.append('rect')
+              .attr('x', -w / 2).attr('y', -h / 2).attr('width', 10).attr('height', h).attr('rx', 2)
+              .attr('fill', item.color);
+            group.append('text')
+              .attr('x', 4).attr('y', 0).attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+              .attr('font-size', fontSize * 0.88).attr('font-weight', '800').attr('fill', '#1f2937')
+              .text(textStr);
+            break;
+          }
+          case 'wood': {
+            // ⑥ 木製・老舗看板風
+            const w = estWidth + 14, h = estHeight + 4;
+            group.append('rect')
+              .attr('x', -w / 2).attr('y', -h / 2).attr('width', w).attr('height', h).attr('rx', 3)
+              .attr('fill', '#f3e5ab').attr('stroke', '#78350f').attr('stroke-width', 3);
+            group.append('rect')
+              .attr('x', -w / 2 + 3).attr('y', -h / 2 + 3).attr('width', w - 6).attr('height', h - 6).attr('rx', 2)
+              .attr('fill', 'none').attr('stroke', '#b45309').attr('stroke-width', 1);
+            group.append('text')
+              .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+              .attr('font-size', fontSize * 0.88).attr('font-weight', '800').attr('fill', '#451a03')
+              .text(textStr);
+            break;
+          }
+          case 'badge': {
+            // ⑦ エリア強調カプセルバッジ
+            const w = estWidth + 16, h = estHeight;
+            group.append('rect')
+              .attr('x', -w / 2).attr('y', -h / 2).attr('width', w).attr('height', h).attr('rx', h / 2)
+              .attr('fill', item.color).attr('stroke', '#ffffff').attr('stroke-width', 2.8);
+            group.append('text')
+              .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+              .attr('font-size', fontSize * 0.86).attr('font-weight', '800').attr('fill', '#ffffff')
+              .text(textStr);
+            break;
+          }
+        }
+      });
+    }
+
+    function startDragLabel(startEvent, labelItem) {
+      const svgNode = svg.node();
+      const pt = svgNode.createSVGPoint();
+      const getSvgCoords = (ev) => {
+        pt.x = ev.clientX;
+        pt.y = ev.clientY;
+        return pt.matrixTransform(svgNode.getScreenCTM().inverse());
+      };
+      const startPos = getSvgCoords(startEvent);
+      const origX = labelItem.x;
+      const origY = labelItem.y;
+
+      function onMove(ev) {
+        const cur = getSvgCoords(ev);
+        labelItem.x = Math.round(Math.max(20, Math.min(SVG_W - 20, origX + (cur.x - startPos.x))));
+        labelItem.y = Math.round(Math.max(20, Math.min(SVG_H - 20, origY + (cur.y - startPos.y))));
+        renderLabelsLayer();
+      }
+      function onUp() {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      }
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    }
+
+    /* =========================================================================
+       6. 散策ルート＆7種の現在地アニメーション描画エンジン
+       ========================================================================= */
+    let activeRoutePathNode = null;
+
+    function renderRouteAndMarker() {
+      gRoute.selectAll('*').remove();
+      document.getElementById('route-count-badge').textContent = `${state.routePoints.length} 頂点`;
+
+      if (state.routePoints.length < 2) {
+        gMarker.selectAll('*').remove();
+        if (state.routePoints.length === 1) {
+          const [x, y] = state.routePoints[0];
+          drawCurrentLocationMarker(x, y, 0);
+        }
+        return;
+      }
+
+      const curveFactory = state.routeConfig.curve === 'catmull' ? d3.curveCatmullRom.alpha(0.5) : d3.curveLinear;
+      const lineGen = d3.line().curve(curveFactory);
+      const pathData = lineGen(state.routePoints);
+
+      // 白い縁取り下線
+      const casingPath = gRoute.append('path')
+        .attr('d', pathData)
+        .attr('fill', 'none')
+        .attr('stroke', '#ffffff')
+        .attr('stroke-width', Number(state.routeConfig.width) + 4)
+        .attr('stroke-linecap', 'round')
+        .attr('stroke-linejoin', 'round');
+
+      // メインルート線
+      const mainPath = gRoute.append('path')
+        .attr('d', pathData)
+        .attr('fill', 'none')
+        .attr('stroke', state.routeConfig.color)
+        .attr('stroke-width', Number(state.routeConfig.width))
+        .attr('stroke-linecap', 'round')
+        .attr('stroke-linejoin', 'round');
+
+      activeRoutePathNode = mainPath.node();
+      const totalLen = activeRoutePathNode.getTotalLength();
+
+      if (state.routeConfig.style === 'dashed') {
+        mainPath.attr('stroke-dasharray', '10, 8');
+      } else if (state.routeConfig.style === 'dots') {
+        mainPath.attr('stroke-dasharray', '2, 11');
+      }
+
+      // 進行度に応じたマスククリップ（スルスル伸びる表現）
+      const clipId = 'route-progress-clip';
+      gRoute.select(`#${clipId}`).remove();
+      const revealPath = gRoute.append('path')
+        .attr('d', pathData)
+        .attr('fill', 'none')
+        .attr('stroke', state.routeConfig.color)
+        .attr('stroke-width', Number(state.routeConfig.width))
+        .attr('stroke-linecap', 'round')
+        .attr('stroke-dasharray', `${totalLen} ${totalLen}`)
+        .attr('stroke-dashoffset', totalLen * (1 - state.playback.progress));
+
+      // 実線以外の場合はマスクを用いて破線が伸びるようにする
+      if (state.routeConfig.style !== 'solid') {
+        const mask = gRoute.append('mask').attr('id', 'route-reveal-mask');
+        mask.append('path')
+          .attr('d', pathData)
+          .attr('fill', 'none')
+          .attr('stroke', '#ffffff')
+          .attr('stroke-width', Number(state.routeConfig.width) + 10)
+          .attr('stroke-linecap', 'round')
+          .attr('stroke-dasharray', `${totalLen} ${totalLen}`)
+          .attr('stroke-dashoffset', totalLen * (1 - state.playback.progress));
+        casingPath.attr('mask', 'url(#route-reveal-mask)');
+        mainPath.attr('mask', 'url(#route-reveal-mask)');
+        revealPath.remove();
+      } else {
+        mainPath.remove();
+        casingPath.attr('stroke-dasharray', `${totalLen} ${totalLen}`)
+          .attr('stroke-dashoffset', totalLen * (1 - state.playback.progress));
+      }
+
+      // スタート地点マーカー
+      const [sx, sy] = state.routePoints[0];
+      gRoute.append('circle')
+        .attr('cx', sx).attr('cy', sy).attr('r', 6)
+        .attr('fill', '#ffffff').attr('stroke', state.routeConfig.color).attr('stroke-width', 3);
+
+      // 編集用の頂点ハンドル（選択またはルート描画モード時）
+      if (state.tool === 'draw-route' || state.tool === 'select') {
+        state.routePoints.forEach((pt, idx) => {
+          gRoute.append('circle')
+            .attr('class', 'route-vertex')
+            .attr('cx', pt[0]).attr('cy', pt[1]).attr('r', 5.5)
+            .attr('fill', idx === state.routePoints.length - 1 ? state.routeConfig.color : '#ffffff')
+            .attr('stroke', '#1f2937').attr('stroke-width', 2)
+            .on('pointerdown', (ev) => {
+              ev.stopPropagation();
+              startDragRouteVertex(ev, idx);
+            });
+        });
+      }
+
+      // 現在地マーカー座標を計算して描画
+      const currentDist = totalLen * state.playback.progress;
+      const pt = activeRoutePathNode.getPointAtLength(currentDist);
+      drawCurrentLocationMarker(pt.x, pt.y);
+    }
+
+    function drawCurrentLocationMarker(x, y) {
+      gMarker.selectAll('*').remove();
+      const wrap = gMarker.append('g').attr('transform', `translate(${x}, ${y})`);
+      const type = state.playback.animType;
+
+      if (type === 'pulse') {
+        // ① レーダー波紋
+        wrap.append('circle').attr('class', 'marker-pulse-1').attr('r', 14).attr('fill', 'rgba(239, 68, 68, 0.45)');
+        wrap.append('circle').attr('class', 'marker-pulse-2').attr('r', 14).attr('fill', 'rgba(239, 68, 68, 0.3)');
+        wrap.append('circle').attr('r', 8).attr('fill', '#ef4444').attr('stroke', '#ffffff').attr('stroke-width', 3);
+      } else if (type === 'bounce') {
+        // ② バウンスピン
+        wrap.append('ellipse').attr('class', 'marker-bounce-shadow').attr('cx', 0).attr('cy', 3).attr('rx', 8).attr('ry', 3.5).attr('fill', '#000000');
+        const pin = wrap.append('g').attr('class', 'marker-bounce-body');
+        pin.append('path')
+          .attr('d', 'M 0,0 C -8,-10 -13,-17 -13,-24 A 13,13 0 1 1 13,-24 C 13,-17 8,-10 0,0 Z')
+          .attr('fill', '#ef4444').attr('stroke', '#ffffff').attr('stroke-width', 2.5);
+        pin.append('circle').attr('cx', 0).attr('cy', -24).attr('r', 5).attr('fill', '#ffffff');
+      } else if (type === 'walk') {
+        // ③ トコトコ歩行
+        const walker = wrap.append('g').attr('class', 'marker-walk-body');
+        walker.append('circle').attr('cx', 0).attr('cy', -12).attr('r', 14).attr('fill', '#ffffff').attr('stroke', '#2563eb').attr('stroke-width', 3);
+        walker.append('text').attr('x', 0).attr('y', -11).attr('text-anchor', 'middle').attr('dominant-baseline', 'central').attr('font-size', '16px').text('🚶');
+      } else if (type === 'star') {
+        // ④ 回転スター
+        const star = wrap.append('g').attr('class', 'marker-star-body');
+        star.append('polygon')
+          .attr('points', '0,-16 4.5,-5 16,-4 7,4 9.5,15 0,9 -9.5,15 -7,4 -16,-4 -4.5,-5')
+          .attr('fill', '#facc15').attr('stroke', '#b45309').attr('stroke-width', 2.2);
+      } else if (type === 'heart') {
+        // ⑤ 鼓動ハート
+        const heart = wrap.append('g').attr('class', 'marker-heart-body');
+        heart.append('circle').attr('r', 14).attr('fill', '#ffffff').attr('stroke', '#ec4899').attr('stroke-width', 2.5);
+        heart.append('path')
+          .attr('d', 'M 0,7 C -8,1 -10,-5 -5,-8 C -2,-10 0,-6 0,-6 C 0,-6 2,-10 5,-8 C 10,-5 8,1 0,7 Z')
+          .attr('fill', '#ec4899');
+      } else if (type === 'compass') {
+        // ⑥ 方位コンパス
+        wrap.append('circle').attr('r', 14).attr('fill', '#ffffff').attr('stroke', '#1e293b').attr('stroke-width', 2.8);
+        const needle = wrap.append('g').attr('class', 'marker-compass-needle');
+        needle.append('polygon').attr('points', '0,-11 4,0 -4,0').attr('fill', '#ef4444');
+        needle.append('polygon').attr('points', '0,11 4,0 -4,0').attr('fill', '#475569');
+        wrap.append('circle').attr('r', 2.2).attr('fill', '#ffffff');
+      } else if (type === 'flag') {
+        // ⑦ フラッグ揺れ
+        wrap.append('ellipse').attr('cx', 0).attr('cy', 2).attr('rx', 7).attr('ry', 3).attr('fill', 'rgba(0,0,0,0.28)');
+        const flag = wrap.append('g').attr('class', 'marker-flag-body');
+        flag.append('line').attr('x1', 0).attr('y1', 2).attr('x2', 0).attr('y2', -26).attr('stroke', '#1f2937').attr('stroke-width', 3).attr('stroke-linecap', 'round');
+        flag.append('path').attr('d', 'M 0,-26 L 20,-20 L 0,-13 Z').attr('fill', '#ef4444').attr('stroke', '#ffffff').attr('stroke-width', 1.5);
+      }
+    }
+
+    function startDragRouteVertex(startEvent, idx) {
+      const svgNode = svg.node();
+      const pt = svgNode.createSVGPoint();
+      const getSvgCoords = (ev) => {
+        pt.x = ev.clientX;
+        pt.y = ev.clientY;
+        return pt.matrixTransform(svgNode.getScreenCTM().inverse());
+      };
+      function onMove(ev) {
+        const cur = getSvgCoords(ev);
+        state.routePoints[idx] = [
+          Math.round(Math.max(10, Math.min(SVG_W - 10, cur.x))),
+          Math.round(Math.max(10, Math.min(SVG_H - 10, cur.y)))
+        ];
+        renderRouteAndMarker();
+      }
+      function onUp() {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      }
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    }
+
+    /* =========================================================================
+       7. アニメーション再生ループ (requestAnimationFrame メモリ安全管理)
+       ========================================================================= */
+    const playBtn = document.getElementById('btn-play-toggle');
+    const progressSlider = document.getElementById('route-progress');
+
+    function stopPlayback() {
+      state.playback.playing = false;
+      if (state.playback.rafId) {
+        cancelAnimationFrame(state.playback.rafId);
+        state.playback.rafId = null;
+      }
+      playBtn.textContent = '▶ 再生';
+    }
+
+    function stepPlayback(timestamp) {
+      if (!state.playback.playing) return;
+      if (!state.playback.lastTimestamp) state.playback.lastTimestamp = timestamp;
+      const dt = (timestamp - state.playback.lastTimestamp) / 1000;
+      state.playback.lastTimestamp = timestamp;
+
+      // 基準4.5秒で1周
+      state.playback.progress += (dt / 4.5) * state.playback.speed;
+      if (state.playback.progress >= 1) {
+        state.playback.progress = 1;
+        progressSlider.value = 1000;
+        renderRouteAndMarker();
+        stopPlayback();
+        return;
+      }
+      progressSlider.value = Math.round(state.playback.progress * 1000);
+      renderRouteAndMarker();
+      state.playback.rafId = requestAnimationFrame(stepPlayback);
+    }
+
+    playBtn.addEventListener('click', () => {
+      if (state.playback.playing) {
+        stopPlayback();
+      } else {
+        if (state.playback.progress >= 0.99) state.playback.progress = 0;
+        state.playback.playing = true;
+        state.playback.lastTimestamp = 0;
+        playBtn.textContent = '⏸ 一時停止';
+        state.playback.rafId = requestAnimationFrame(stepPlayback);
+      }
+    });
+
+    progressSlider.addEventListener('input', (e) => {
+      stopPlayback();
+      state.playback.progress = Number(e.target.value) / 1000;
+      renderRouteAndMarker();
+    });
+
+    document.getElementById('anim-type-select').addEventListener('change', (e) => {
+      state.playback.animType = e.target.value;
+      renderRouteAndMarker();
+    });
+
+    document.getElementById('anim-speed-select').addEventListener('change', (e) => {
+      state.playback.speed = Number(e.target.value) || 1;
+    });
+
+    /* =========================================================================
+       8. UI・インスペクター連携
+       ========================================================================= */
+    function setHudStatus(msg, busy = false) {
+      document.getElementById('hud-text').textContent = msg;
+      document.getElementById('hud-dot').classList.toggle('busy', busy);
+    }
+
+    function selectLabel(id) {
+      state.selectedLabelId = id;
+      const item = state.labels.find(l => l.id === id);
+      if (item) {
+        document.getElementById('lbl-text').value = item.text;
+        document.getElementById('lbl-sub').value = item.sub || '';
+        document.getElementById('lbl-color').value = item.color;
+        document.getElementById('lbl-size').value = item.size;
+        document.getElementById('lbl-size-val').textContent = `${item.size}px`;
+        document.getElementById('lbl-rot').value = item.rot || 0;
+        document.getElementById('lbl-rot-val').textContent = `${item.rot || 0}°`;
+        document.querySelectorAll('#preset-grid .preset-chip').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.preset === item.preset);
+        });
+      }
+      renderLabelsLayer();
+    }
+
+    // ツールレール切り替え
+    document.querySelectorAll('.tool-rail .rail-btn[data-tool]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.tool = btn.dataset.tool;
+        document.querySelectorAll('.tool-rail .rail-btn[data-tool]').forEach(b => b.classList.toggle('active', b === btn));
+        if (state.tool === 'select') setHudStatus('選択モード：ラベルやルート頂点をドラッグして位置調整できます');
+        if (state.tool === 'add-label') setHudStatus('ラベル追加モード：地図上の配置したい場所をクリックしてください');
+        if (state.tool === 'draw-route') setHudStatus('ルート描画モード：地図上を順番にクリックして散策ルートを伸ばします');
+        renderRouteAndMarker();
+      });
+    });
+
+    // SVGキャンバスクリック動作
+    svg.on('pointerdown', (event) => {
+      const svgNode = svg.node();
+      const pt = svgNode.createSVGPoint();
+      pt.x = event.clientX;
+      pt.y = event.clientY;
+      const loc = pt.matrixTransform(svgNode.getScreenCTM().inverse());
+      const x = Math.round(loc.x);
+      const y = Math.round(loc.y);
+
+      if (state.tool === 'add-label') {
+        const newId = `lbl-${Date.now()}`;
+        const activePreset = document.querySelector('#preset-grid .preset-chip.active')?.dataset.preset || 'outline';
+        state.labels.push({
+          id: newId,
+          x, y,
+          text: '新規スポット',
+          sub: `${state.labels.length + 1}`,
+          preset: activePreset,
+          color: document.getElementById('lbl-color').value,
+          size: Number(document.getElementById('lbl-size').value) || 18,
+          rot: 0
+        });
+        selectLabel(newId);
+      } else if (state.tool === 'draw-route') {
+        state.routePoints.push([x, y]);
+        state.playback.progress = 1.0;
+        progressSlider.value = 1000;
+        renderRouteAndMarker();
+      }
+    });
+
+    // ラベル編集インスペクターのバインディング
+    document.querySelectorAll('#preset-grid .preset-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        document.querySelectorAll('#preset-grid .preset-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        const item = state.labels.find(l => l.id === state.selectedLabelId);
+        if (item) {
+          item.preset = chip.dataset.preset;
+          renderLabelsLayer();
+        }
+      });
+    });
+
+    ['lbl-text', 'lbl-sub', 'lbl-color', 'lbl-size', 'lbl-rot'].forEach(id => {
+      document.getElementById(id).addEventListener('input', (e) => {
+        const item = state.labels.find(l => l.id === state.selectedLabelId);
+        if (!item) return;
+        if (id === 'lbl-text') item.text = e.target.value;
+        if (id === 'lbl-sub') item.sub = e.target.value;
+        if (id === 'lbl-color') item.color = e.target.value;
+        if (id === 'lbl-size') {
+          item.size = Number(e.target.value);
+          document.getElementById('lbl-size-val').textContent = `${item.size}px`;
+        }
+        if (id === 'lbl-rot') {
+          item.rot = Number(e.target.value);
+          document.getElementById('lbl-rot-val').textContent = `${item.rot}°`;
+        }
+        renderLabelsLayer();
+      });
+    });
+
+    document.getElementById('btn-new-label').addEventListener('click', () => {
+      const newId = `lbl-${Date.now()}`;
+      state.labels.push({
+        id: newId,
+        x: Math.round(SVG_W / 2 + (Math.random() - 0.5) * 120),
+        y: Math.round(SVG_H / 2 + (Math.random() - 0.5) * 80),
+        text: '注目スポット',
+        sub: '★',
+        preset: 'callout',
+        color: '#2563eb',
+        size: 18,
+        rot: 0
+      });
+      selectLabel(newId);
+    });
+
+    document.getElementById('btn-delete-label').addEventListener('click', () => {
+      state.labels = state.labels.filter(l => l.id !== state.selectedLabelId);
+      state.selectedLabelId = state.labels[0]?.id || null;
+      if (state.selectedLabelId) selectLabel(state.selectedLabelId);
+      else renderLabelsLayer();
+    });
+
+    // 主要地名の自動配置
+    document.getElementById('btn-auto-labels').addEventListener('click', () => {
+      if (!state.mapGeoData || !state.mapGeoData.categorized.poiLabels.length) {
+        setHudStatus('現在の地図範囲から抽出できる地名データがありませんでした');
+        return;
+      }
+      const { poiLabels } = state.mapGeoData.categorized;
+      const { projection } = state.mapGeoData;
+      const usedNames = new Set(state.labels.map(l => l.text));
+      let added = 0;
+
+      for (const poi of poiLabels) {
+        if (usedNames.has(poi.name)) continue;
+        const [px, py] = projection(poi.coords);
+        if (px < 50 || px > SVG_W - 50 || py < 40 || py > SVG_H - 40) continue;
+        // 既存ラベルと近すぎる場合はスキップ
+        const tooClose = state.labels.some(l => Math.hypot(l.x - px, l.y - py) < 85);
+        if (tooClose) continue;
+
+        usedNames.add(poi.name);
+        state.labels.push({
+          id: `lbl-auto-${Date.now()}-${added}`,
+          x: Math.round(px),
+          y: Math.round(py),
+          text: poi.name,
+          sub: poi.isStation ? '駅' : '地名',
+          preset: poi.isStation ? 'station' : 'outline',
+          color: poi.isStation ? '#1d4ed8' : '#374151',
+          size: poi.isStation ? 16 : 15,
+          rot: 0
+        });
+        added++;
+        if (added >= 6) break;
+      }
+      renderLabelsLayer();
+      setHudStatus(`${added}件の主要地名・駅ラベルを自動配置しました`);
+    });
+
+    // レイヤーON/OFF・配色変更
+    document.querySelectorAll('#layer-toggles .layer-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        const key = pill.dataset.layer;
+        state.layers[key] = !state.layers[key];
+        pill.classList.toggle('active', state.layers[key]);
+        renderMapVectorLayer();
+      });
+    });
+
+    document.getElementById('theme-select').addEventListener('change', (e) => {
+      state.theme = e.target.value;
+      renderMapVectorLayer();
+    });
+
+    // ルート設定変更
+    ['route-style', 'route-curve', 'route-color', 'route-width'].forEach(id => {
+      document.getElementById(id).addEventListener('input', (e) => {
+        if (id === 'route-style') state.routeConfig.style = e.target.value;
+        if (id === 'route-curve') state.routeConfig.curve = e.target.value;
+        if (id === 'route-color') state.routeConfig.color = e.target.value;
+        if (id === 'route-width') {
+          state.routeConfig.width = Number(e.target.value);
+          document.getElementById('route-width-val').textContent = `${e.target.value}px`;
+        }
+        renderRouteAndMarker();
+      });
+    });
+
+    document.getElementById('btn-undo-route').addEventListener('click', () => {
+      state.routePoints.pop();
+      renderRouteAndMarker();
+    });
+
+    document.getElementById('btn-clear-route').addEventListener('click', () => {
+      state.routePoints = [];
+      renderRouteAndMarker();
+    });
+
+    /* =========================================================================
+       9. 地図範囲選択モーダル制御 (Leaflet)
+       ========================================================================= */
+    const mapModal = document.getElementById('map-modal');
+    let leafletMap = null;
+
+    function openMapModal() {
+      mapModal.classList.add('open');
+      if (!leafletMap) {
+        leafletMap = L.map('leaflet-map').setView([34.64, 135.0], 12); // 明石海峡・淡路島北部〜神戸周辺
+        L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
+          maxZoom: 18,
+          attribution: '出典：国土地理院'
+        }).addTo(leafletMap);
+
+        leafletMap.on('moveend zoomend', () => {
+          const z = leafletMap.getZoom();
+          const cfg = getOptimalTileConfig(z);
+          document.getElementById('modal-zoom-badge').textContent = `${cfg.label}`;
+        });
+      }
+      setTimeout(() => leafletMap.invalidateSize(), 60);
+    }
+
+    function closeMapModal() {
+      mapModal.classList.remove('open');
+    }
+
+    document.getElementById('btn-open-map').addEventListener('click', openMapModal);
+    document.getElementById('btn-center-map').addEventListener('click', openMapModal);
+    document.getElementById('btn-close-modal').addEventListener('click', closeMapModal);
+
+    document.getElementById('btn-preset-island').addEventListener('click', () => {
+      if (leafletMap) leafletMap.setView([34.48, 134.88], 10); // 淡路島全体
+    });
+    document.getElementById('btn-preset-town').addEventListener('click', () => {
+      if (leafletMap) leafletMap.setView([34.815, 135.345], 15); // 武庫川・宝塚大橋周辺（川と橋が分かりやすい詳細域）
+    });
+
+    document.getElementById('btn-execute-extract').addEventListener('click', async () => {
+      if (!leafletMap) return;
+      const bounds = leafletMap.getBounds();
+      const zoom = leafletMap.getZoom();
+      closeMapModal();
+      await extractVectorMapFromBounds(bounds, zoom);
+    });
+
+    /* =========================================================================
+       10. SVG書き出し (メモリリーク防止 ObjectURL 即時解放)
+       ========================================================================= */
+    document.getElementById('btn-export-svg').addEventListener('click', () => {
+      // 選択枠を一時解除してクリーンなSVGをシリアライズ
+      const prevSelected = state.selectedLabelId;
+      state.selectedLabelId = null;
+      renderLabelsLayer();
+
+      const cloneSvg = svg.node().cloneNode(true);
+      cloneSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      const source = new XMLSerializer().serializeToString(cloneSvg);
+      const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `wipemap_${Date.now()}.svg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      state.selectedLabelId = prevSelected;
+      renderLabelsLayer();
+      setHudStatus('SVGファイルを保存しました');
+    });
+
+    /* =========================================================================
+       初期起動処理：デフォルト範囲（川と橋と街路が揃ったエリア）を自動描画
+       ========================================================================= */
+    (async function initApp() {
+      selectLabel(state.selectedLabelId);
+      renderRouteAndMarker();
+      const defaultBounds = L.latLngBounds([34.805, 135.332], [34.825, 135.360]);
+      await extractVectorMapFromBounds(defaultBounds, 15);
+    })();
+  </script>
+</body>
+</html>
