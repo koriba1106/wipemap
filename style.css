@@ -1,0 +1,759 @@
+:root {
+  /* 人間工学に基づく薄グレー（ニュートラルライトグレー）基調のカラーシステム */
+  --bg-app: #f3f4f6;
+  --bg-workspace: #e5e7eb;
+  --bg-panel: #ffffff;
+  --bg-subtle: #f9fafb;
+  --bg-hover: #f3f4f6;
+  --bg-active: #e0e7ff;
+  --border-light: #e5e7eb;
+  --border-medium: #d1d5db;
+  --text-primary: #1f2937;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --danger: #ef4444;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", sans-serif;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 1. トップヘッダー */
+.topbar {
+  height: 50px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  z-index: 20;
+  gap: 8px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.94rem;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.brand-logo {
+  font-size: 1.1rem;
+}
+
+.brand-badge {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-medium);
+  color: var(--text-secondary);
+  font-size: 0.71rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.btn-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-subtle);
+  padding: 3px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+}
+
+.topbar-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border-light);
+  margin: 0 2px;
+}
+
+/* 汎用ボタン */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 1px solid var(--border-medium);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.14s ease;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: #9ca3af;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn-danger {
+  color: var(--danger);
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #fee2e2;
+}
+
+/* 2. メインワークスペース */
+.main-area {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  position: relative;
+}
+
+/* ファイルドロップ用オーバーレイ */
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(37, 99, 235, 0.12);
+  backdrop-filter: blur(4px);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-overlay[hidden] {
+  display: none !important;
+}
+
+.drop-overlay-box {
+  background: var(--bg-panel);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-lg);
+  padding: 28px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  box-shadow: var(--shadow-lg);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+/* 左ツールレール */
+.tool-rail {
+  width: 58px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 8px;
+  z-index: 10;
+}
+
+.rail-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 1.05rem;
+}
+
+.rail-btn span {
+  font-size: 0.58rem;
+  font-weight: 600;
+}
+
+.rail-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.rail-btn.active {
+  background: var(--bg-active);
+  color: var(--accent);
+  border-color: #c7d2fe;
+}
+
+.rail-divider {
+  width: 28px;
+  height: 1px;
+  background: var(--border-light);
+  margin: 4px 0;
+}
+
+/* 中央キャンバス領域 */
+.canvas-stage {
+  flex: 1;
+  background: var(--bg-workspace);
+  background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+  background-size: 20px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  padding: 24px 24px 84px 24px;
+}
+
+/* テレビワイプ枠エミュレータ */
+.wipe-frame {
+  width: 100%;
+  max-width: 780px;
+  aspect-ratio: 16 / 10;
+  background: #f6f5f0;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg), 0 0 0 6px #ffffff, 0 0 0 7px var(--border-medium);
+  overflow: hidden;
+  position: relative;
+  transition: background 0.2s;
+}
+
+/* 透過線画モード時のチェッカーボード（市松模様）プレビュー背景 */
+.wipe-frame.transparent-checker {
+  background-color: #e5e7eb;
+  background-image:
+    linear-gradient(45deg, #d1d5db 25%, transparent 25%),
+    linear-gradient(-45deg, #d1d5db 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d1d5db 75%),
+    linear-gradient(-45deg, transparent 75%, #d1d5db 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+
+#wipe-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+/* キャンバス左上ステータスHUD */
+.canvas-hud {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border-light);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.77rem;
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+  z-index: 12;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  flex-shrink: 0;
+}
+
+.status-dot.busy {
+  background: #f59e0b;
+  animation: blink 0.9s infinite alternate;
+}
+
+@keyframes blink {
+  from { opacity: 0.3; }
+  to { opacity: 1; }
+}
+
+/* 録画中バナー */
+.recording-banner {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: #111827;
+  color: #ffffff;
+  padding: 6px 12px 6px 14px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: var(--shadow-md);
+  z-index: 30;
+}
+
+.recording-banner[hidden] {
+  display: none !important;
+}
+
+.rec-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: blink 0.6s infinite alternate;
+}
+
+.btn-rec-cancel {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-rec-cancel:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+}
+
+/* トースト通知 */
+.toast-container {
+  position: absolute;
+  bottom: 72px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.toast-item {
+  background: rgba(17, 24, 39, 0.92);
+  color: #ffffff;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  font-size: 0.78rem;
+  font-weight: 500;
+  box-shadow: var(--shadow-md);
+  animation: toast-in 0.2s ease-out;
+}
+
+.toast-item.error {
+  background: rgba(185, 28, 28, 0.95);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 下部フローティング再生ドック */
+.playback-dock {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-medium);
+  border-radius: 999px;
+  padding: 6px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: var(--shadow-md);
+  z-index: 15;
+}
+
+.dock-slider {
+  width: 170px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.dock-select {
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-medium);
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  padding: 0 8px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* 3. 右インスペクターパネル */
+.inspector {
+  width: 316px;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.inspector-section {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.inspector-section.highlight-tool {
+  background: #f8fafc;
+  border-left: 3px solid var(--accent);
+}
+
+.section-title {
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.muted-count {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.form-row:last-child {
+  margin-bottom: 0;
+}
+
+.form-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  display: flex;
+  justify-content: space-between;
+}
+
+.form-input, .form-select {
+  width: 100%;
+  height: 31px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-medium);
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  font-size: 0.81rem;
+}
+
+.form-input:focus, .form-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: #ffffff;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.preset-chip {
+  padding: 6px 8px;
+  font-size: 0.74rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  font-weight: 500;
+  transition: all 0.12s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preset-chip:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-medium);
+}
+
+.preset-chip.active {
+  background: var(--bg-active);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* レイヤーピル切り替え */
+.layer-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.layer-pill {
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.73rem;
+  font-weight: 500;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-medium);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.layer-pill.active {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+/* 4. 地図範囲切り出しモーダル */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  backdrop-filter: blur(3px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 24px;
+}
+
+.modal-backdrop.open {
+  display: flex;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 860px;
+  height: 78vh;
+  background: var(--bg-panel);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+}
+
+.modal-header {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-subtle);
+}
+
+.modal-body {
+  flex: 1;
+  position: relative;
+}
+
+#leaflet-map {
+  width: 100%;
+  height: 100%;
+}
+
+.map-crop-guide {
+  position: absolute;
+  inset: 36px 60px;
+  border: 2px dashed #2563eb;
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.22);
+  pointer-events: none;
+  z-index: 500;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 8px;
+}
+
+.map-crop-guide span {
+  background: rgba(37, 99, 235, 0.9);
+  color: #ffffff;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.modal-footer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-panel);
+}
+
+/* SVG内インタラクティブ要素 */
+.draggable-label {
+  cursor: grab;
+}
+
+.draggable-label:active {
+  cursor: grabbing;
+}
+
+.draggable-label.selected .selection-ring {
+  stroke: #3b82f6;
+  stroke-width: 2px;
+  stroke-dasharray: 4 3;
+  fill: rgba(59, 130, 246, 0.06);
+}
+
+.route-vertex {
+  cursor: move;
+  transition: r 0.12s;
+}
+
+.route-vertex:hover {
+  r: 8px;
+}
+
+/* 消しゴムブラシのプレビューカーソル */
+.eraser-cursor {
+  pointer-events: none;
+  fill: rgba(239, 68, 68, 0.14);
+  stroke: #ef4444;
+  stroke-width: 1.8px;
+  stroke-dasharray: 4 2;
+}
+
+/* ==========================================================
+   7種類の現在地アニメーション定義 (ライブプレビュー用CSS)
+   ========================================================== */
+@keyframes anim-pulse-ring {
+  0% { transform: scale(0.4); opacity: 0.95; }
+  100% { transform: scale(2.8); opacity: 0; }
+}
+.marker-pulse-1 { animation: anim-pulse-ring 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite; transform-box: fill-box; transform-origin: center; }
+.marker-pulse-2 { animation: anim-pulse-ring 1.8s cubic-bezier(0.16, 1, 0.3, 1) 0.6s infinite; transform-box: fill-box; transform-origin: center; }
+
+@keyframes anim-bounce-pin {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  45% { transform: translateY(-16px) scaleY(1.06); }
+  75% { transform: translateY(0) scaleY(0.92); }
+}
+@keyframes anim-bounce-shadow {
+  0%, 100% { transform: scale(1); opacity: 0.45; }
+  45% { transform: scale(0.55); opacity: 0.2; }
+}
+.marker-bounce-body { animation: anim-bounce-pin 0.95s ease-in-out infinite; }
+.marker-bounce-shadow { animation: anim-bounce-shadow 0.95s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+
+@keyframes anim-walk-wobble {
+  0%, 100% { transform: translateY(0) rotate(-9deg); }
+  50% { transform: translateY(-6px) rotate(9deg); }
+}
+.marker-walk-body { animation: anim-walk-wobble 0.55s ease-in-out infinite; transform-box: fill-box; transform-origin: bottom center; }
+
+@keyframes anim-star-spin {
+  0% { transform: rotate(0deg) scale(0.92); }
+  50% { transform: rotate(180deg) scale(1.15); }
+  100% { transform: rotate(360deg) scale(0.92); }
+}
+.marker-star-body { animation: anim-star-spin 2.6s linear infinite; transform-box: fill-box; transform-origin: center; }
+
+@keyframes anim-heart-beat {
+  0%, 100% { transform: scale(1); }
+  15% { transform: scale(1.3); }
+  30% { transform: scale(0.95); }
+  45% { transform: scale(1.22); }
+}
+.marker-heart-body { animation: anim-heart-beat 1.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+
+@keyframes anim-compass-needle {
+  0%, 100% { transform: rotate(-28deg); }
+  40% { transform: rotate(32deg); }
+  75% { transform: rotate(-12deg); }
+}
+.marker-compass-needle { animation: anim-compass-needle 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+
+@keyframes anim-flag-wave {
+  0%, 100% { transform: rotate(-6deg) skewX(0deg); }
+  50% { transform: rotate(8deg) skewX(-8deg); }
+}
+.marker-flag-body { animation: anim-flag-wave 0.9s ease-in-out infinite; transform-box: fill-box; transform-origin: bottom left; }
