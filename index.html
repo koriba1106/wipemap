@@ -4,127 +4,112 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WipeMap Studio Pro — 旅番組ワイプ地図制作システム</title>
-  <!-- Leaflet (範囲指定モーダル用) -->
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
-  <!-- D3.js (GeoJSON投影・ベクター生成) -->
+  <!-- D3.js -->
   <script src="https://d3js.org/d3.v7.min.js" crossorigin="anonymous"></script>
   <!-- スタイルシート -->
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
 
-  <!-- 1. トップヘッダー -->
+  <!-- 1. スッキリ整理されたトップバー -->
   <header class="topbar">
-    <div class="brand">
-      <span class="brand-logo" aria-hidden="true">🗺️</span>
-      <span>WipeMap Studio Pro</span>
-      <span class="brand-badge" id="scale-indicator">詳細・街歩きモード (Z:16)</span>
+    <div class="topbar-left">
+      <div class="brand">
+        <span class="brand-icon" aria-hidden="true">🗺️</span>
+        <span class="brand-name">WipeMap Studio</span>
+      </div>
+      <button type="button" class="btn btn-primary" id="btn-open-map" title="地図の範囲と縮尺を細かく指定して切り出します (M)">
+        📍 地図範囲・縮尺を選択
+      </button>
+      <span class="scale-pill" id="scale-indicator">Z:15.0 / 詳細 (Tile Z16)</span>
     </div>
 
-    <div class="topbar-actions">
-      <!-- プロジェクト管理ボタングループ -->
-      <div class="btn-group" role="group" aria-label="プロジェクト管理">
-        <button type="button" class="btn" id="btn-save-project" title="編集中の全状態（地図範囲・ラベル・ルート・消しゴム履歴）をJSONファイルに保存">
-          📥 保存 (JSON)
-        </button>
-        <button type="button" class="btn" id="btn-load-project" title="保存したプロジェクトJSONファイルを読み込んで再開">
-          📂 読込
-        </button>
-        <button type="button" class="btn" id="btn-reset-project" title="初期サンプル状態にリセット">
-          🔄 初期化
-        </button>
+    <div class="topbar-right">
+      <!-- プロジェクト管理（コンパクトグループ） -->
+      <div class="segmented-actions" role="group" aria-label="プロジェクト管理">
+        <button type="button" class="btn-seg" id="btn-save-project" title="作業状態をJSONファイルとして保存">📥 保存</button>
+        <button type="button" class="btn-seg" id="btn-load-project" title="保存したJSONファイルを読み込む">📂 読込</button>
+        <button type="button" class="btn-seg" id="btn-reset-project" title="初期サンプル状態に戻す">🔄 初期化</button>
         <input type="file" id="project-file-input" accept=".json,application/json" hidden>
       </div>
 
-      <div class="topbar-divider"></div>
-
-      <!-- 地図・地名抽出ボタングループ -->
-      <button type="button" class="btn" id="btn-open-map" title="国土地理院地図から切り出し範囲を指定">
-        📍 地図範囲を選択
-      </button>
-      <button type="button" class="btn" id="btn-auto-labels" title="ベクトルタイルから主要地名・駅名を自動抽出">
-        ✨ 地名を自動配置
-      </button>
-
-      <div class="topbar-divider"></div>
-
-      <!-- 書き出しボタングループ -->
-      <button type="button" class="btn" id="btn-export-svg" title="ベクターSVGファイルとして保存">
-        💾 SVG出力
-      </button>
-      <button type="button" class="btn btn-primary" id="btn-export-video" title="ルート進行と現在地アニメーションを動画(WebM)として録画出力">
-        🎬 動画出力 (WebM)
-      </button>
+      <!-- 書き出しグループ -->
+      <div class="segmented-actions" role="group" aria-label="ファイル書き出し">
+        <button type="button" class="btn-seg" id="btn-export-svg" title="ベクターSVG画像として書き出し">💾 SVG出力</button>
+        <button type="button" class="btn-seg btn-seg-accent" id="btn-export-video" title="アニメーション付きWebM動画を書き出し">🎬 動画出力 (WebM)</button>
+      </div>
     </div>
   </header>
 
-  <!-- 2. メイン3ペイン領域 -->
+  <!-- 2. メインワークスペース -->
   <div class="main-area" id="drop-zone">
-    <!-- ファイルドラッグ＆ドロップ時のオーバーレイ -->
+    <!-- JSONドラッグ＆ドロップ時の案内オーバーレイ -->
     <div class="drop-overlay" id="drop-overlay" hidden>
       <div class="drop-overlay-box">
-        <span style="font-size:2.2rem;">📂</span>
-        <strong>プロジェクトファイル (.json) をドロップして読み込む</strong>
-        <span>地図範囲・ラベル・散策ルート・消しゴム履歴を完全復元します</span>
+        <span style="font-size:2rem;">📂</span>
+        <strong>プロジェクトファイル (.json) をドロップして復元</strong>
+        <span>地図範囲・縮尺・ラベル・散策ルート・消しゴム履歴を読み込みます</span>
       </div>
     </div>
 
-    <!-- 左ツールレール -->
-    <nav class="tool-rail" aria-label="編集ツール">
+    <!-- 左ツールレール（クリックすると右パネルも自動連動） -->
+    <nav class="tool-rail" aria-label="編集ツール選択">
       <button type="button" class="rail-btn active" data-tool="select" title="選択・移動モード (V)">
-        🖱️<span>選択</span>
+        <span class="rail-icon">🖱️</span>
+        <span class="rail-label">選択</span>
       </button>
-      <button type="button" class="rail-btn" data-tool="add-label" title="キャンバスをクリックして地名ラベル追加 (L)">
-        🏷️<span>ラベル</span>
+      <button type="button" class="rail-btn" data-tool="add-label" title="地名・スポットラベル追加 (L)">
+        <span class="rail-icon">🏷️</span>
+        <span class="rail-label">ラベル</span>
       </button>
-      <button type="button" class="rail-btn" data-tool="draw-route" title="キャンバスをクリックして散策ルート描画 (R)">
-        ✏️<span>ルート</span>
+      <button type="button" class="rail-btn" data-tool="draw-route" title="散策ルート描画 (R)">
+        <span class="rail-icon">✏️</span>
+        <span class="rail-label">ルート</span>
       </button>
-      <button type="button" class="rail-btn" data-tool="eraser" title="不要な地図線画をなぞって消去する消しゴムツール (E)">
-        🧽<span>消しゴム</span>
-      </button>
-      <div class="rail-divider"></div>
-      <button type="button" class="rail-btn" id="btn-center-map" title="地図範囲選択モーダルを開く (M)">
-        🌐<span>範囲</span>
+      <button type="button" class="rail-btn" data-tool="eraser" title="不要な線画を消す消しゴム (E)">
+        <span class="rail-icon">🧽</span>
+        <span class="rail-label">消しゴム</span>
       </button>
     </nav>
 
-    <!-- 中央キャンバス -->
+    <!-- 中央キャンバスステージ（余計な格子やドットのないフラット薄グレー） -->
     <main class="canvas-stage" id="canvas-stage">
       <div class="canvas-hud">
         <span class="status-dot" id="hud-dot"></span>
-        <span id="hud-text">選択モード：ラベルやルート頂点をドラッグして調整できます</span>
+        <span id="hud-text">選択モード：ラベルやルート頂点をドラッグして移動できます</span>
       </div>
 
-      <!-- 録画中オーバーレイバナー（キャンセルボタン付き） -->
+      <!-- 動画レンダリング中バナー -->
       <div class="recording-banner" id="recording-banner" hidden>
         <span class="rec-dot"></span>
         <span id="recording-status-text">動画レンダリング中... (0%)</span>
-        <button type="button" class="btn-rec-cancel" id="btn-cancel-video" title="動画出力を中断 (Esc)">中断</button>
+        <button type="button" class="btn-rec-cancel" id="btn-cancel-video">中断 (Esc)</button>
       </div>
 
-      <!-- ワイプフレーム本体 -->
+      <!-- 16:10 ワイプ地図フレーム -->
       <div class="wipe-frame" id="wipe-frame">
         <svg id="wipe-svg" viewBox="0 0 800 500" preserveAspectRatio="xMidYMid meet"></svg>
       </div>
 
-      <!-- 下部フローティング再生ドック (7種アニメーション切り替え) -->
+      <!-- 下部フローティング再生バー -->
       <div class="playback-dock">
-        <button type="button" class="btn btn-primary" id="btn-play-toggle" style="height:28px; padding:0 12px;" title="再生 / 一時停止 (Space)">
+        <button type="button" class="btn btn-primary" id="btn-play-toggle" style="height:30px; padding:0 14px;" title="再生 / 一時停止 (Space)">
           ▶ 再生
         </button>
-        <input type="range" id="route-progress" class="dock-slider" min="0" max="1000" value="1000" aria-label="ルート進行度" title="ルート進行度">
-        <select id="anim-type-select" class="dock-select" aria-label="現在地アニメーション" title="現在地アニメーション (7種類)">
-          <option value="pulse">① レーダー波紋 (パルス)</option>
-          <option value="bounce">② バウンスピン (弾むピン)</option>
-          <option value="walk">③ トコトコ歩行 (ウォーク)</option>
-          <option value="star">④ 回転スター (注目星)</option>
-          <option value="heart">⑤ 鼓動ハート (名所・グルメ)</option>
-          <option value="compass">⑥ 方位コンパス (探索スイング)</option>
-          <option value="flag">⑦ フラッグ揺れ (ゴール旗)</option>
+        <input type="range" id="route-progress" class="dock-slider" min="0" max="1000" value="1000" aria-label="ルート進行度">
+        <select id="anim-type-select" class="dock-select" aria-label="現在地アニメーション (7種)">
+          <option value="pulse">① レーダー波紋</option>
+          <option value="bounce">② バウンスピン</option>
+          <option value="walk">③ トコトコ歩行</option>
+          <option value="star">④ 回転スター</option>
+          <option value="heart">⑤ 鼓動ハート</option>
+          <option value="compass">⑥ 方位コンパス</option>
+          <option value="flag">⑦ フラッグ揺れ</option>
         </select>
-        <select id="anim-speed-select" class="dock-select" aria-label="再生速度" title="再生速度（動画出力の尺にも反映）">
+        <select id="anim-speed-select" class="dock-select" aria-label="再生速度">
           <option value="0.6">0.6x (ゆっくり)</option>
           <option value="1" selected>1.0x (標準 5秒)</option>
           <option value="1.8">1.8x (速め)</option>
@@ -132,18 +117,22 @@
         </select>
       </div>
 
-      <!-- トースト通知コンテナ -->
+      <!-- トースト通知 -->
       <div class="toast-container" id="toast-container" aria-live="polite"></div>
     </main>
 
-    <!-- 右インスペクター -->
+    <!-- 右インスペクター（4タブ切り替え式でスッキリ整理） -->
     <aside class="inspector">
-      <!-- セクションA: 線画レイヤーと配色 (透過線画スタイル対応) -->
-      <div class="inspector-section">
-        <div class="section-title">
-          <span>地図スタイル・レイヤー</span>
-        </div>
-        <div class="form-row">
+      <div class="inspector-tabs" role="tablist">
+        <button type="button" class="insp-tab active" data-tab="map" role="tab">🗺️ 地図</button>
+        <button type="button" class="insp-tab" data-tab="label" role="tab">🏷️ ラベル</button>
+        <button type="button" class="insp-tab" data-tab="route" role="tab">✏️ ルート</button>
+        <button type="button" class="insp-tab" data-tab="eraser" role="tab">🧽 消去</button>
+      </div>
+
+      <!-- タブ1: 地図スタイル・表示レイヤー -->
+      <div class="inspector-pane active" data-pane="map">
+        <div class="pane-block">
           <label class="form-label" for="theme-select">配色・透過テーマ</label>
           <select id="theme-select" class="form-select">
             <option value="tv-ivory">テレビ標準 (アイボリー背景)</option>
@@ -154,44 +143,47 @@
             <option value="line-trans-light">★ 線画で透過 (白線＋黒フチ)</option>
           </select>
         </div>
-        <div class="layer-toggles" id="layer-toggles">
-          <button type="button" class="layer-pill active" data-layer="coast">海岸・河川</button>
-          <button type="button" class="layer-pill active" data-layer="border">市区境界</button>
-          <button type="button" class="layer-pill active" data-layer="majorRoad">幹線道路</button>
-          <button type="button" class="layer-pill active" data-layer="minorRoad">地域道路</button>
-          <button type="button" class="layer-pill active" data-layer="bridge">橋梁強調</button>
-          <button type="button" class="layer-pill active" data-layer="rail">鉄道</button>
+
+        <div class="pane-block">
+          <div class="form-label">表示する地図要素（クリックでON/OFF）</div>
+          <div class="layer-grid" id="layer-toggles">
+            <button type="button" class="layer-card active" data-layer="coast">
+              <span class="layer-dot" style="background:#38bdf8;"></span>海岸・河川
+            </button>
+            <button type="button" class="layer-card active" data-layer="majorRoad">
+              <span class="layer-dot" style="background:#f59e0b;"></span>幹線道路
+            </button>
+            <button type="button" class="layer-card active" data-layer="minorRoad">
+              <span class="layer-dot" style="background:#94a3b8;"></span>地域道路
+            </button>
+            <button type="button" class="layer-card active" data-layer="bridge">
+              <span class="layer-dot" style="background:#334155;"></span>橋梁強調
+            </button>
+            <button type="button" class="layer-card active" data-layer="rail">
+              <span class="layer-dot" style="background:#475569;"></span>鉄道・駅
+            </button>
+            <button type="button" class="layer-card active" data-layer="border">
+              <span class="layer-dot" style="background:#cbd5e1;"></span>市区境界
+            </button>
+          </div>
+        </div>
+
+        <div class="pane-block">
+          <div class="form-label">地名の自動抽出</div>
+          <button type="button" class="btn" id="btn-auto-labels" style="width:100%;">
+            ✨ 地図内の主要地名・駅名を自動配置
+          </button>
+          <p class="help-note">現在の地図に含まれる駅名や主要施設をラベルとして自動配置します。</p>
         </div>
       </div>
 
-      <!-- セクションB: 消しゴムツール設定 -->
-      <div class="inspector-section" id="eraser-inspector-section">
-        <div class="section-title">
-          <span>🧽 消しゴムツール (不要線の消去)</span>
-          <span id="eraser-count-badge" class="muted-count">0 箇所</span>
-        </div>
-        <div class="form-row">
-          <label class="form-label" for="eraser-size">
-            <span>消しゴムの大きさ (直径)</span>
-            <strong id="eraser-size-val">32px</strong>
-          </label>
-          <input type="range" id="eraser-size" min="8" max="120" value="32" style="width:100%;">
-        </div>
-        <div class="grid-2" style="margin-top:8px;">
-          <button type="button" class="btn" id="btn-undo-eraser" style="height:28px;" title="直前の消去を戻す (Ctrl+Z)">1つ戻す</button>
-          <button type="button" class="btn btn-danger" id="btn-clear-eraser" style="height:28px;">消去を全復元</button>
-        </div>
-      </div>
-
-      <!-- セクションC: 地名・ランドマークラベル編集 (7種プリセット) -->
-      <div class="inspector-section" id="label-inspector-section">
-        <div class="section-title">
-          <span>地名・スポットラベル</span>
-          <button type="button" class="btn" id="btn-new-label" style="height:24px; padding:0 8px; font-size:0.72rem;">＋ 追加</button>
-        </div>
-
-        <div class="form-row">
-          <span class="form-label">テレビ番組風プリセット (7種)</span>
+      <!-- タブ2: 地名・スポットラベル設定 (7種プリセット) -->
+      <div class="inspector-pane" data-pane="label">
+        <div class="pane-block">
+          <div class="form-label">
+            <span>ラベルデザイン (7種)</span>
+            <button type="button" class="btn-mini" id="btn-new-label">＋ 新規追加</button>
+          </div>
           <div class="preset-grid" id="preset-grid">
             <button type="button" class="preset-chip active" data-preset="outline">① 太字白フチ文字</button>
             <button type="button" class="preset-chip" data-preset="callout">② 吹き出しプレート</button>
@@ -203,49 +195,48 @@
           </div>
         </div>
 
-        <div class="form-row">
-          <label class="form-label" for="lbl-text">表示テキスト</label>
-          <input type="text" id="lbl-text" class="form-input" maxlength="40" placeholder="地名やスポット名を入力">
-        </div>
+        <div class="pane-block">
+          <div class="form-row">
+            <label class="form-label" for="lbl-text">表示テキスト</label>
+            <input type="text" id="lbl-text" class="form-input" maxlength="40" placeholder="地名やスポット名を入力">
+          </div>
 
-        <div class="grid-2 form-row">
-          <div>
-            <label class="form-label" for="lbl-sub">番号/サブ文字</label>
-            <input type="text" id="lbl-sub" class="form-input" maxlength="6" placeholder="①, 駅, スタート">
+          <div class="grid-2 form-row">
+            <div>
+              <label class="form-label" for="lbl-sub">丸番号 / サブ文字</label>
+              <input type="text" id="lbl-sub" class="form-input" maxlength="6" placeholder="①, 駅 など">
+            </div>
+            <div>
+              <label class="form-label" for="lbl-color">アクセント色</label>
+              <input type="color" id="lbl-color" class="form-input color-input" value="#1f2937">
+            </div>
           </div>
-          <div>
-            <label class="form-label" for="lbl-color">アクセント色</label>
-            <input type="color" id="lbl-color" class="form-input" value="#1f2937" style="padding:2px 4px;">
-          </div>
-        </div>
 
-        <div class="grid-2 form-row">
-          <div>
-            <label class="form-label" for="lbl-size">サイズ <span id="lbl-size-val">18px</span></label>
-            <input type="range" id="lbl-size" min="11" max="38" value="18" style="width:100%;">
+          <div class="form-row">
+            <label class="form-label" for="lbl-size">文字サイズ <strong id="lbl-size-val">18px</strong></label>
+            <input type="range" id="lbl-size" min="11" max="38" value="18">
           </div>
-          <div>
-            <label class="form-label" for="lbl-rot">角度 <span id="lbl-rot-val">0°</span></label>
-            <input type="range" id="lbl-rot" min="-45" max="45" value="0" style="width:100%;">
-          </div>
-        </div>
 
-        <div class="form-row" style="margin-top:8px;">
-          <button type="button" class="btn btn-danger" id="btn-delete-label" style="width:100%; height:28px;" title="選択中のラベルを削除 (Delete)">
-            選択中のラベルを削除
+          <div class="form-row">
+            <label class="form-label" for="lbl-rot">回転角度 <strong id="lbl-rot-val">0°</strong></label>
+            <input type="range" id="lbl-rot" min="-45" max="45" value="0">
+          </div>
+
+          <button type="button" class="btn btn-danger" id="btn-delete-label" style="width:100%; margin-top:6px;">
+            🗑️ 選択中のラベルを削除
           </button>
         </div>
       </div>
 
-      <!-- セクションD: 散策ルート設定 -->
-      <div class="inspector-section">
-        <div class="section-title">
-          <span>散策ルート設定</span>
-          <span id="route-count-badge" class="muted-count">5 頂点</span>
-        </div>
+      <!-- タブ3: 散策ルート設定 -->
+      <div class="inspector-pane" data-pane="route">
+        <div class="pane-block">
+          <div class="form-label">
+            <span>ルート線のデザイン</span>
+            <span id="route-count-badge" class="muted-count">5 頂点</span>
+          </div>
 
-        <div class="grid-2 form-row">
-          <div>
+          <div class="form-row">
             <label class="form-label" for="route-style">線スタイル</label>
             <select id="route-style" class="form-select">
               <option value="dashed">旅番組風 赤破線</option>
@@ -253,61 +244,112 @@
               <option value="dots">足跡風ドットライン</option>
             </select>
           </div>
-          <div>
-            <label class="form-label" for="route-curve">補間</label>
+
+          <div class="form-row">
+            <label class="form-label" for="route-curve">コーナー補間</label>
             <select id="route-curve" class="form-select">
               <option value="catmull">なめらか曲線</option>
               <option value="linear">直線（折れ線）</option>
             </select>
           </div>
-        </div>
 
-        <div class="grid-2 form-row">
-          <div>
-            <label class="form-label" for="route-color">ルート色</label>
-            <input type="color" id="route-color" class="form-input" value="#ef4444" style="padding:2px 4px;">
+          <div class="grid-2 form-row">
+            <div>
+              <label class="form-label" for="route-color">線の色</label>
+              <input type="color" id="route-color" class="form-input color-input" value="#ef4444">
+            </div>
+            <div>
+              <label class="form-label" for="route-width">太さ <strong id="route-width-val">6px</strong></label>
+              <input type="range" id="route-width" min="3" max="12" value="6" style="margin-top:6px;">
+            </div>
           </div>
-          <div>
-            <label class="form-label" for="route-width">太さ <span id="route-width-val">6px</span></label>
-            <input type="range" id="route-width" min="3" max="12" value="6" style="width:100%;">
-          </div>
-        </div>
 
-        <div class="grid-2" style="margin-top:8px;">
-          <button type="button" class="btn" id="btn-undo-route" style="height:28px;" title="最後の頂点を戻す (Ctrl+Z)">1点戻す</button>
-          <button type="button" class="btn btn-danger" id="btn-clear-route" style="height:28px;">ルート消去</button>
+          <div class="grid-2" style="margin-top:12px;">
+            <button type="button" class="btn" id="btn-undo-route">↩ 1点戻す</button>
+            <button type="button" class="btn btn-danger" id="btn-clear-route">すべて消去</button>
+          </div>
+          <p class="help-note">左ツールの「✏️ ルート」を選んで地図上をクリックするとルートを伸ばせます。各頂点はドラッグで微調整できます。</p>
+        </div>
+      </div>
+
+      <!-- タブ4: 消しゴムツール設定 -->
+      <div class="inspector-pane" data-pane="eraser">
+        <div class="pane-block">
+          <div class="form-label">
+            <span>消しゴムブラシ設定</span>
+            <span id="eraser-count-badge" class="muted-count">0 箇所</span>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label" for="eraser-size">
+              <span>ブラシ直径</span>
+              <strong id="eraser-size-val">32px</strong>
+            </label>
+            <input type="range" id="eraser-size" min="8" max="120" value="32">
+          </div>
+
+          <div class="grid-2" style="margin-top:12px;">
+            <button type="button" class="btn" id="btn-undo-eraser">↩ 1つ戻す</button>
+            <button type="button" class="btn btn-danger" id="btn-clear-eraser">すべて復元</button>
+          </div>
+          <p class="help-note">不要な道路や境界線をドラッグして消去できます。配置したラベルや散策ルートは消えずに保護されます。</p>
         </div>
       </div>
     </aside>
   </div>
 
-  <!-- 3. 地図範囲選択モーダル (国土地理院タイル) -->
+  <!-- 3. 地図範囲・縮尺の細密指定モーダル -->
   <div class="modal-backdrop" id="map-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-card">
       <div class="modal-header">
-        <div>
-          <strong id="modal-title" style="font-size:0.92rem;">国土地理院マップから切り出し範囲を指定</strong>
-          <span style="font-size:0.76rem; color:var(--text-secondary); margin-left:10px;">
-            島全体（ズーム9〜11）から街角・橋（ズーム15〜16）まで自動最適化されます
-          </span>
+        <div class="modal-title-group">
+          <strong id="modal-title">切り出す地図の範囲・縮尺を指定</strong>
+          <span class="modal-sub">青い枠（16:10）の内部がそのままワイプ地図になります</span>
         </div>
-        <button type="button" class="btn" id="btn-close-modal" style="height:28px;">✕ 閉じる</button>
+        <div class="modal-presets">
+          <button type="button" class="btn-mini" id="btn-preset-island">🏝️ 島全体 (Z10.2)</button>
+          <button type="button" class="btn-mini" id="btn-preset-city">🏙️ 都市・幹線 (Z13.0)</button>
+          <button type="button" class="btn-mini" id="btn-preset-town">🌉 街歩き・橋 (Z15.5)</button>
+          <button type="button" class="btn" id="btn-close-modal" style="height:28px;">✕ 閉じる</button>
+        </div>
       </div>
+
       <div class="modal-body">
         <div id="leaflet-map"></div>
-        <div class="map-crop-guide">
-          <span id="modal-zoom-badge">切り出し枠 (16:10)</span>
+        <!-- 切り出し範囲と完全一致する16:10ガイド枠 -->
+        <div class="map-crop-guide" id="crop-guide-box">
+          <span id="modal-zoom-badge">Zoom 15.0 / 切り出し枠 (16:10)</span>
         </div>
       </div>
+
+      <!-- 細密な縮尺スライダー＆ディテール密度指定フッター -->
       <div class="modal-footer">
-        <div style="font-size:0.78rem; color:var(--text-secondary);" id="modal-status">
-          枠内に収めたい地域を表示して「この範囲を線画化」を押してください
+        <div class="zoom-fine-controls">
+          <div class="zoom-control-item">
+            <label for="fine-zoom-slider">縮尺 (0.1刻み): <strong id="fine-zoom-val">15.0</strong></label>
+            <div class="zoom-slider-wrap">
+              <button type="button" class="btn-zoom-step" id="btn-zoom-out" title="少し広域へ (-0.2)">－</button>
+              <input type="range" id="fine-zoom-slider" min="7.0" max="17.5" step="0.1" value="15.0">
+              <button type="button" class="btn-zoom-step" id="btn-zoom-in" title="少し詳細へ (+0.2)">＋</button>
+            </div>
+          </div>
+
+          <div class="zoom-control-item">
+            <label for="detail-level-select">線画の密度（取得タイル）:</label>
+            <select id="detail-level-select" class="dock-select">
+              <option value="auto" selected>自動（縮尺に合わせる）</option>
+              <option value="9">超広域・輪郭のみ (Tile Z9)</option>
+              <option value="11">広域・主要国道のみ (Tile Z11)</option>
+              <option value="13">中域・市区幹線 (Tile Z13)</option>
+              <option value="14">準詳細・主要街路 (Tile Z14)</option>
+              <option value="16">最高詳細・路地と橋 (Tile Z16)</option>
+            </select>
+          </div>
         </div>
-        <div style="display:flex; gap:8px;">
-          <button type="button" class="btn" id="btn-preset-island">🏝️ 島・広域サンプル</button>
-          <button type="button" class="btn" id="btn-preset-town">🌉 河川・街歩きサンプル</button>
-          <button type="button" class="btn btn-primary" id="btn-execute-extract">🔄 この範囲を線画化</button>
-        </div>
+
+        <button type="button" class="btn btn-primary" id="btn-execute-extract" style="height:36px; padding:0 20px; font-size:0.86rem;">
+          🔄 この枠内の範囲を線画化
+        </button>
       </div>
     </div>
   </div>

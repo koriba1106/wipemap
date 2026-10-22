@@ -4,8 +4,8 @@ import Pbf from 'https://esm.sh/pbf@3.2.1';
 /* =========================================================================
    1. 定数・テーマ定義・ホワイトリスト
    ========================================================================= */
-const APP_SCHEMA_VERSION = '1.0.0';
-const STORAGE_AUTOSAVE_KEY = 'wipemap_studio_pro_autosave_v1';
+const APP_SCHEMA_VERSION = '1.1.0';
+const STORAGE_AUTOSAVE_KEY = 'wipemap_studio_pro_autosave_v2';
 const SVG_W = 800;
 const SVG_H = 500;
 
@@ -13,6 +13,7 @@ const VALID_PRESETS = new Set(['outline', 'callout', 'numbered', 'station', 'rib
 const VALID_ANIM_TYPES = new Set(['pulse', 'bounce', 'walk', 'star', 'heart', 'compass', 'flag']);
 const VALID_ROUTE_STYLES = new Set(['dashed', 'solid', 'dots']);
 const VALID_ROUTE_CURVES = new Set(['catmull', 'linear']);
+const VALID_DETAIL_MODES = new Set(['auto', '9', '11', '13', '14', '16']);
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
 
 const THEMES = Object.freeze({
@@ -20,7 +21,7 @@ const THEMES = Object.freeze({
     transparent: false,
     land: '#f6f5f0',
     water: '#a8d8f8',
-    waterStroke: '#6eb4e6',
+    waterStroke: '#5aa5db',
     majorRoad: '#fde047',
     majorCase: '#d97706',
     minorRoad: '#ffffff',
@@ -46,7 +47,7 @@ const THEMES = Object.freeze({
     transparent: false,
     land: '#fef9f5',
     water: '#bae6fd',
-    waterStroke: '#7dd3fc',
+    waterStroke: '#38bdf8',
     majorRoad: '#fed7aa',
     majorCase: '#ea580c',
     minorRoad: '#ffffff',
@@ -59,7 +60,7 @@ const THEMES = Object.freeze({
     transparent: false,
     land: '#efe8d8',
     water: '#9bc1bc',
-    waterStroke: '#6b9ac4',
+    waterStroke: '#5c8a9e',
     majorRoad: '#f4a261',
     majorCase: '#8d5b4c',
     minorRoad: '#faf6f0',
@@ -180,7 +181,8 @@ function createDefaultProjectState() {
       west: 135.332,
       north: 34.825,
       east: 135.360,
-      zoom: 15
+      zoom: 15.0,
+      detailMode: 'auto'
     },
     eraser: {
       size: 32,
@@ -211,6 +213,7 @@ const defaults = createDefaultProjectState();
 
 const state = {
   tool: 'select', // 'select' | 'add-label' | 'draw-route' | 'eraser'
+  activeTab: 'map', // 'map' | 'label' | 'route' | 'eraser'
   theme: defaults.theme,
   layers: { ...defaults.layers },
   mapRegion: { ...defaults.mapRegion },
@@ -251,7 +254,7 @@ function showToast(message, isError = false) {
     item.style.opacity = '0';
     item.style.transition = 'opacity 0.25s ease';
     setTimeout(() => item.remove(), 260);
-  }, 3200);
+  }, 3000);
 }
 
 function setHudStatus(msg, busy = false) {
@@ -262,7 +265,7 @@ function setHudStatus(msg, busy = false) {
 }
 
 /* =========================================================================
-   5. プロジェクト保存・読込・厳格スキーマ検証サニタイザー (Production-Grade)
+   5. プロジェクト保存・読込・厳格スキーマ検証サニタイザー
    ========================================================================= */
 function clampNumber(val, min, max, fallback) {
   const n = Number(val);
@@ -279,9 +282,6 @@ function sanitizeString(val, maxLen, fallback = '') {
   return val.replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, maxLen);
 }
 
-/**
- * 外部JSONペイロードを検証・サニタイズし、安全なプロジェクトオブジェクトを返す
- */
 function sanitizeProjectPayload(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('プロジェクトファイルの形式が正しくありません。');
@@ -290,7 +290,6 @@ function sanitizeProjectPayload(raw) {
   const def = createDefaultProjectState();
   const theme = Object.prototype.hasOwnProperty.call(THEMES, raw.theme) ? raw.theme : def.theme;
 
-  // レイヤー設定の検証
   const rawLayers = (raw.layers && typeof raw.layers === 'object') ? raw.layers : {};
   const layers = {
     coast: rawLayers.coast !== undefined ? Boolean(rawLayers.coast) : def.layers.coast,
@@ -301,7 +300,6 @@ function sanitizeProjectPayload(raw) {
     rail: rawLayers.rail !== undefined ? Boolean(rawLayers.rail) : def.layers.rail
   };
 
-  // 地図領域の検証（日本国内外の有効な経緯度範囲）
   const rm = (raw.mapRegion && typeof raw.mapRegion === 'object') ? raw.mapRegion : {};
   const south = clampNumber(rm.south, -85, 85, def.mapRegion.south);
   const north = clampNumber(rm.north, -85, 85, def.mapRegion.north);
@@ -312,10 +310,10 @@ function sanitizeProjectPayload(raw) {
     north: Math.max(north, south + 0.0005),
     west: Math.min(west, east - 0.0005),
     east: Math.max(east, west + 0.0005),
-    zoom: Math.round(clampNumber(rm.zoom, 5, 18, def.mapRegion.zoom))
+    zoom: Number(clampNumber(rm.zoom, 6.0, 18.0, def.mapRegion.zoom).toFixed(1)),
+    detailMode: VALID_DETAIL_MODES.has(String(rm.detailMode)) ? String(rm.detailMode) : 'auto'
   };
 
-  // 消しゴム履歴の検証（最大500ストローク、各ストローク最大2000頂点）
   const rawEraser = (raw.eraser && typeof raw.eraser === 'object') ? raw.eraser : {};
   const eraserSize = Math.round(clampNumber(rawEraser.size, 8, 120, def.eraser.size));
   const strokes = [];
@@ -336,7 +334,6 @@ function sanitizeProjectPayload(raw) {
     }
   }
 
-  // ラベル一覧の検証（最大150件）
   const labels = [];
   if (Array.isArray(raw.labels)) {
     raw.labels.slice(0, 150).forEach((lbl, idx) => {
@@ -355,7 +352,6 @@ function sanitizeProjectPayload(raw) {
     });
   }
 
-  // 散策ルートの検証（最大1000頂点）
   const routePoints = [];
   if (Array.isArray(raw.routePoints)) {
     for (const pt of raw.routePoints.slice(0, 1000)) {
@@ -395,9 +391,6 @@ function sanitizeProjectPayload(raw) {
   };
 }
 
-/**
- * 現在のアプリ状態をシリアライズ用オブジェクトに変換
- */
 function serializeCurrentProject() {
   return {
     app: 'WipeMap Studio Pro',
@@ -420,9 +413,6 @@ function serializeCurrentProject() {
   };
 }
 
-/**
- * 自動保存（デバウンス付き localStorage 保存）
- */
 let autoSaveTimer = null;
 function scheduleAutoSave() {
   if (autoSaveTimer) clearTimeout(autoSaveTimer);
@@ -431,14 +421,11 @@ function scheduleAutoSave() {
       const payload = serializeCurrentProject();
       localStorage.setItem(STORAGE_AUTOSAVE_KEY, JSON.stringify(payload));
     } catch {
-      // プライベートブラウジングや容量超過時は無視
+      // ignore storage quota errors
     }
   }, 400);
 }
 
-/**
- * 検証済みプロジェクトデータをStateとUIコントロール一式へ反映
- */
 async function applyProjectData(cleanData, fetchMap = true) {
   stopPlayback();
 
@@ -465,7 +452,7 @@ async function applyProjectData(cleanData, fetchMap = true) {
       [state.mapRegion.south, state.mapRegion.west],
       [state.mapRegion.north, state.mapRegion.east]
     );
-    await extractVectorMapFromBounds(bounds, state.mapRegion.zoom);
+    await extractVectorMapFromBounds(bounds, state.mapRegion.zoom, state.mapRegion.detailMode);
   } else {
     renderMapVectorLayer();
   }
@@ -473,31 +460,27 @@ async function applyProjectData(cleanData, fetchMap = true) {
 }
 
 function syncAllUiControlsFromState() {
-  // テーマとレイヤーボタン
   document.getElementById('theme-select').value = state.theme;
-  document.querySelectorAll('#layer-toggles .layer-pill').forEach(pill => {
-    const key = pill.dataset.layer;
-    pill.classList.toggle('active', Boolean(state.layers[key]));
+  document.querySelectorAll('#layer-toggles .layer-card').forEach(card => {
+    const key = card.dataset.layer;
+    card.classList.toggle('active', Boolean(state.layers[key]));
   });
 
-  // 消しゴムUI
   document.getElementById('eraser-size').value = state.eraser.size;
   document.getElementById('eraser-size-val').textContent = `${state.eraser.size}px`;
   eraserCursor.attr('r', state.eraser.size / 2);
 
-  // ルート設定UI
   document.getElementById('route-style').value = state.routeConfig.style;
   document.getElementById('route-curve').value = state.routeConfig.curve;
   document.getElementById('route-color').value = state.routeConfig.color;
   document.getElementById('route-width').value = state.routeConfig.width;
   document.getElementById('route-width-val').textContent = `${state.routeConfig.width}px`;
 
-  // アニメーション設定UI
   document.getElementById('anim-type-select').value = state.playback.animType;
   document.getElementById('anim-speed-select').value = String(state.playback.speed);
   document.getElementById('route-progress').value = Math.round(state.playback.progress * 1000);
+  document.getElementById('detail-level-select').value = state.mapRegion.detailMode || 'auto';
 
-  // 選択中ラベルUI
   if (state.selectedLabelId) {
     selectLabel(state.selectedLabelId);
   }
@@ -508,6 +491,13 @@ function syncAllUiControlsFromState() {
    ========================================================================= */
 const svg = d3.select('#wipe-svg');
 const defs = svg.append('defs');
+
+// 地図外枠クリップパス（線がキャンバス外へはみ出すのを防ぐ）
+defs.append('clipPath')
+  .attr('id', 'canvas-clip')
+  .append('rect')
+  .attr('x', 0).attr('y', 0)
+  .attr('width', SVG_W).attr('height', SVG_H);
 
 // 消しゴム用SVGマスク（白＝表示、黒＝消去）
 const eraserMask = defs.append('mask')
@@ -530,6 +520,7 @@ const gBaseBg = svg.append('rect')
 
 const gMapVector = svg.append('g')
   .attr('id', 'layer-map-vector')
+  .attr('clip-path', 'url(#canvas-clip)')
   .attr('mask', 'url(#eraser-mask)');
 
 const gRoute = svg.append('g').attr('id', 'layer-route');
@@ -556,20 +547,92 @@ gCredit.append('text')
   .text('出典：国土地理院');
 
 /* =========================================================================
-   7. 国土地理院 最適化ベクトルタイル抽出・レンダリング
+   7. タイル境界グリッド線を完全排除する国土地理院ベクトルタイル抽出エンジン
    ========================================================================= */
 function lon2tile(lon, z) { return Math.floor((lon + 180) / 360 * Math.pow(2, z)); }
 function lat2tile(lat, z) {
   return Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z));
 }
 
-function getOptimalTileConfig(mapZoom) {
-  if (mapZoom <= 11) return { tileZoom: Math.max(8, Math.min(11, mapZoom)), label: `広域・島全体モード (Z:${mapZoom})` };
-  if (mapZoom <= 14) return { tileZoom: mapZoom, label: `中域・市区モード (Z:${mapZoom})` };
-  return { tileZoom: 16, label: `詳細・街歩きモード (Z:16)` };
+function tileX2lon(x, z) {
+  return (x / Math.pow(2, z)) * 360 - 180;
+}
+function tileY2lat(y, z) {
+  const n = Math.PI - (2 * Math.PI * y) / Math.pow(2, z);
+  return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
 }
 
-async function extractVectorMapFromBounds(bounds, mapZoom) {
+function resolveTileZoom(mapZoom, detailMode = 'auto') {
+  if (detailMode !== 'auto') {
+    const forced = Number(detailMode);
+    if (Number.isFinite(forced)) return forced;
+  }
+  const z = Math.round(mapZoom);
+  if (z <= 10) return Math.max(8, z);
+  if (z <= 12) return 11;
+  if (z <= 13) return 13;
+  if (z <= 14) return 14;
+  return 16;
+}
+
+/**
+ * タイル内部のLineStringから、タイル外周（0 または extent=4096）に張り付いた
+ * 人工的なクリップ境界線（縦横の格子線の原因）を除外して経緯度GeoJSONへ変換する
+ */
+function extractCleanLineFeatures(rawFeat, tileX, tileY, tileZoom) {
+  const extent = rawFeat.extent || 4096;
+  const margin = 2; // タイル端の判定マージン
+  const rawPaths = rawFeat.loadGeometry();
+  const cleanMultiCoords = [];
+
+  const projectPt = (pt) => {
+    const lon = tileX2lon(tileX + pt.x / extent, tileZoom);
+    const lat = tileY2lat(tileY + pt.y / extent, tileZoom);
+    return [lon, lat];
+  };
+
+  const isOnSameTileEdge = (p1, p2) => {
+    if (p1.x <= margin && p2.x <= margin) return true;
+    if (p1.x >= extent - margin && p2.x >= extent - margin) return true;
+    if (p1.y <= margin && p2.y <= margin) return true;
+    if (p1.y >= extent - margin && p2.y >= extent - margin) return true;
+    return false;
+  };
+
+  for (const ring of rawPaths) {
+    if (ring.length < 2) continue;
+    let currentSubPath = [projectPt(ring[0])];
+
+    for (let i = 0; i < ring.length - 1; i++) {
+      const p1 = ring[i];
+      const p2 = ring[i + 1];
+      if (isOnSameTileEdge(p1, p2)) {
+        // タイル境界上を走る人工エッジはスキップして線を分割
+        if (currentSubPath.length >= 2) {
+          cleanMultiCoords.push(currentSubPath);
+        }
+        currentSubPath = [projectPt(p2)];
+      } else {
+        currentSubPath.push(projectPt(p2));
+      }
+    }
+    if (currentSubPath.length >= 2) {
+      cleanMultiCoords.push(currentSubPath);
+    }
+  }
+
+  if (cleanMultiCoords.length === 0) return null;
+  return {
+    type: 'Feature',
+    properties: rawFeat.properties || {},
+    geometry: {
+      type: 'MultiLineString',
+      coordinates: cleanMultiCoords
+    }
+  };
+}
+
+async function extractVectorMapFromBounds(bounds, mapZoom, detailMode = state.mapRegion.detailMode) {
   if (currentAbortController) currentAbortController.abort();
   currentAbortController = new AbortController();
   const { signal } = currentAbortController;
@@ -578,36 +641,37 @@ async function extractVectorMapFromBounds(bounds, mapZoom) {
 
   const minLng = bounds.getWest(), maxLng = bounds.getEast();
   const minLat = bounds.getSouth(), maxLat = bounds.getNorth();
+  const cleanZoom = Number(Number(mapZoom).toFixed(1));
 
-  // プロジェクト保存用に現在の地図範囲を記録
   state.mapRegion = {
     south: Number(minLat.toFixed(6)),
     west: Number(minLng.toFixed(6)),
     north: Number(maxLat.toFixed(6)),
     east: Number(maxLng.toFixed(6)),
-    zoom: mapZoom
+    zoom: cleanZoom,
+    detailMode: detailMode || 'auto'
   };
   scheduleAutoSave();
 
-  const { tileZoom, label } = getOptimalTileConfig(mapZoom);
-  document.getElementById('scale-indicator').textContent = label;
+  let activeTileZoom = resolveTileZoom(cleanZoom, detailMode);
+  let minX = lon2tile(minLng, activeTileZoom), maxX = lon2tile(maxLng, activeTileZoom);
+  let minY = lat2tile(maxLat, activeTileZoom), maxY = lat2tile(minLat, activeTileZoom);
 
-  let activeZoom = tileZoom;
-  let minX = lon2tile(minLng, activeZoom), maxX = lon2tile(maxLng, activeZoom);
-  let minY = lat2tile(maxLat, activeZoom), maxY = lat2tile(minLat, activeZoom);
-
-  while ((maxX - minX + 1) * (maxY - minY + 1) > 25 && activeZoom > 8) {
-    activeZoom--;
-    minX = lon2tile(minLng, activeZoom);
-    maxX = lon2tile(maxLng, activeZoom);
-    minY = lat2tile(maxLat, activeZoom);
-    maxY = lat2tile(minLat, activeZoom);
+  // タイル枚数が多すぎる場合は自動で1段下げてブラウザメモリを保護
+  while ((maxX - minX + 1) * (maxY - minY + 1) > 28 && activeTileZoom > 8) {
+    activeTileZoom--;
+    minX = lon2tile(minLng, activeTileZoom);
+    maxX = lon2tile(maxLng, activeTileZoom);
+    minY = lat2tile(maxLat, activeTileZoom);
+    maxY = lat2tile(minLat, activeTileZoom);
   }
+
+  document.getElementById('scale-indicator').textContent = `Z:${cleanZoom.toFixed(1)} / 密度:Tile Z${activeTileZoom}`;
 
   const tasks = [];
   for (let x = minX; x <= maxX; x++) {
     for (let y = minY; y <= maxY; y++) {
-      const url = `https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/${activeZoom}/${x}/${y}.pbf`;
+      const url = `https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/${activeTileZoom}/${x}/${y}.pbf`;
       tasks.push(async () => {
         const buf = await fetchTileWithTimeout(url, signal);
         return buf ? { x, y, buf } : null;
@@ -636,46 +700,68 @@ async function extractVectorMapFromBounds(bounds, mapZoom) {
     } catch {
       continue;
     }
+
     for (const layerName of Object.keys(tile.layers)) {
       const layer = tile.layers[layerName];
       const ln = layerName.toLowerCase();
+
       for (let i = 0; i < layer.length; i++) {
-        const feat = layer.feature(i);
-        const props = feat.properties || {};
-        const geo = feat.toGeoJSON(x, y, activeZoom);
+        const rawFeat = layer.feature(i);
+        const props = rawFeat.properties || {};
 
-        if (ln.includes('wa') || ln.includes('water') || ln.includes('coastline') || ln.includes('rvrcl') || ln.includes('wl')) {
-          if (geo.geometry.type.includes('Polygon')) categorized.waterArea.push(geo);
-          else categorized.coastline.push(geo);
-        } else if (ln.includes('bnd') || ln.includes('adm')) {
-          categorized.borders.push(geo);
-        } else if (ln.includes('rdcl') || ln.includes('road')) {
-          const rdCtg = props.rdCtg ?? props.ftCode;
-          const isBridge = (props.state === '橋・高架' || props.state === 1 || props.ftCode === 2703);
-          if (isBridge && activeZoom >= 14) categorized.bridges.push(geo);
+        // rawFeat.type: 1=Point, 2=LineString, 3=Polygon
+        if (rawFeat.type === 3) {
+          // 水域面（wa / waterarea）のみ抽出し、タイル境界線を出さないよう塗り専用として扱う
+          if (ln === 'wa' || ln.includes('waterarea') || ln.includes('lake')) {
+            const geo = rawFeat.toGeoJSON(x, y, activeTileZoom);
+            categorized.waterArea.push(geo);
+          }
+        } else if (rawFeat.type === 2) {
+          // 線データはタイル外周クリップエッジを除去して抽出
+          if (ln === 'coastline' || ln === 'wl' || ln === 'rvrcl' || ln.includes('river') || ln.includes('water')) {
+            const cleanLine = extractCleanLineFeatures(rawFeat, x, y, activeTileZoom);
+            if (cleanLine) categorized.coastline.push(cleanLine);
+          } else if (ln === 'bndl' || ln.includes('bnd') || ln.includes('adm')) {
+            const cleanLine = extractCleanLineFeatures(rawFeat, x, y, activeTileZoom);
+            if (cleanLine) categorized.borders.push(cleanLine);
+          } else if (ln === 'rdcl' || ln.includes('road')) {
+            const cleanLine = extractCleanLineFeatures(rawFeat, x, y, activeTileZoom);
+            if (!cleanLine) continue;
 
-          const isMajor = activeZoom <= 13 || rdCtg === 0 || rdCtg === 1 ||
-                          String(props.rdCtg).includes('国道') || String(props.rdCtg).includes('県道') ||
-                          String(props.rdCtg).includes('高速');
-          if (isMajor) categorized.majorRoads.push(geo);
-          else categorized.minorRoads.push(geo);
-        } else if (ln.includes('rail')) {
-          categorized.railways.push(geo);
-        } else if ((ln.includes('label') || ln.includes('anno') || ln.includes('structure')) && geo.geometry.type === 'Point') {
-          const name = props.knj || props.name || props.dspName;
-          if (typeof name === 'string' && name.trim().length >= 2 && name.trim().length <= 12) {
-            categorized.poiLabels.push({
-              name: name.trim(),
-              coords: geo.geometry.coordinates,
-              isStation: String(props.annoCtg || '').includes('駅') || name.endsWith('駅')
-            });
+            const rdCtg = props.rdCtg ?? props.ftCode;
+            const isBridge = (props.state === '橋・高架' || props.state === 1 || props.ftCode === 2703);
+            if (isBridge && activeTileZoom >= 14) {
+              categorized.bridges.push(cleanLine);
+            }
+
+            const isMajor = activeTileZoom <= 13 || rdCtg === 0 || rdCtg === 1 ||
+                            String(props.rdCtg).includes('国道') || String(props.rdCtg).includes('県道') ||
+                            String(props.rdCtg).includes('高速');
+            if (isMajor) categorized.majorRoads.push(cleanLine);
+            else categorized.minorRoads.push(cleanLine);
+          } else if (ln === 'railcl' || ln.includes('rail')) {
+            const cleanLine = extractCleanLineFeatures(rawFeat, x, y, activeTileZoom);
+            if (cleanLine) categorized.railways.push(cleanLine);
+          }
+        } else if (rawFeat.type === 1) {
+          if (ln.includes('label') || ln.includes('anno') || ln.includes('structure')) {
+            const name = props.knj || props.name || props.dspName;
+            if (typeof name === 'string' && name.trim().length >= 2 && name.trim().length <= 12) {
+              const geo = rawFeat.toGeoJSON(x, y, activeTileZoom);
+              categorized.poiLabels.push({
+                name: name.trim(),
+                coords: geo.geometry.coordinates,
+                isStation: String(props.annoCtg || '').includes('駅') || name.endsWith('駅')
+              });
+            }
           }
         }
       }
     }
   }
 
-  const projection = d3.geoMercator().fitExtent([[12, 12], [SVG_W - 12, SVG_H - 12]], {
+  // 切り出し枠のBBoxをキャンバス(800x500)全面に余白なしでフィットさせる
+  const projection = d3.geoMercator().fitExtent([[0, 0], [SVG_W, SVG_H]], {
     type: 'FeatureCollection',
     features: [
       { type: 'Feature', geometry: { type: 'Point', coordinates: [minLng, minLat] } },
@@ -706,13 +792,17 @@ function renderMapVectorLayer() {
   const { categorized, projection } = state.mapGeoData;
   const path = d3.geoPath().projection(projection);
 
+  // 1. 水域面と海岸線・河川ライン（タイル境界の縦横線が出ないよう水面ポリゴンには異なる色のstrokeを付けない）
   if (state.layers.coast) {
-    gMapVector.append('g').selectAll('path')
-      .data(categorized.waterArea).enter().append('path')
-      .attr('d', path)
-      .attr('fill', theme.transparent ? 'none' : theme.water)
-      .attr('stroke', theme.waterStroke)
-      .attr('stroke-width', theme.transparent ? 1.8 : 1);
+    if (!theme.transparent) {
+      gMapVector.append('g').selectAll('path')
+        .data(categorized.waterArea).enter().append('path')
+        .attr('d', path)
+        .attr('fill', theme.water)
+        .attr('stroke', theme.water)
+        .attr('stroke-width', 0.6)
+        .attr('stroke-linejoin', 'round');
+    }
 
     gMapVector.append('g').selectAll('path')
       .data(categorized.coastline).enter().append('path')
@@ -720,36 +810,45 @@ function renderMapVectorLayer() {
       .attr('fill', 'none')
       .attr('stroke', theme.waterStroke)
       .attr('stroke-width', 2.2)
-      .attr('stroke-linecap', 'round');
+      .attr('stroke-linecap', 'round')
+      .attr('stroke-linejoin', 'round');
   }
 
+  // 2. 市区町村界（タイル端のクリップエッジ除去済み）
   if (state.layers.border) {
     gMapVector.append('g').selectAll('path')
       .data(categorized.borders).enter().append('path')
-      .attr('d', path).attr('fill', 'none').attr('stroke', theme.border)
-      .attr('stroke-width', 1.4).attr('stroke-dasharray', '6,4');
+      .attr('d', path)
+      .attr('fill', 'none')
+      .attr('stroke', theme.border)
+      .attr('stroke-width', 1.4)
+      .attr('stroke-dasharray', '6,4')
+      .attr('stroke-linecap', 'round');
   }
 
+  // 3. 地域道路
   if (state.layers.minorRoad) {
     const gMinor = gMapVector.append('g');
     gMinor.selectAll('.c').data(categorized.minorRoads).enter().append('path')
       .attr('d', path).attr('fill', 'none').attr('stroke', theme.minorCase)
-      .attr('stroke-width', 4).attr('stroke-linecap', 'round');
+      .attr('stroke-width', 4).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
     gMinor.selectAll('.r').data(categorized.minorRoads).enter().append('path')
       .attr('d', path).attr('fill', 'none').attr('stroke', theme.minorRoad)
-      .attr('stroke-width', 2.2).attr('stroke-linecap', 'round');
+      .attr('stroke-width', 2.2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
   }
 
+  // 4. 幹線道路
   if (state.layers.majorRoad) {
     const gMajor = gMapVector.append('g');
     gMajor.selectAll('.c').data(categorized.majorRoads).enter().append('path')
       .attr('d', path).attr('fill', 'none').attr('stroke', theme.majorCase)
-      .attr('stroke-width', 5.8).attr('stroke-linecap', 'round');
+      .attr('stroke-width', 5.8).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
     gMajor.selectAll('.r').data(categorized.majorRoads).enter().append('path')
       .attr('d', path).attr('fill', 'none').attr('stroke', theme.majorRoad)
-      .attr('stroke-width', 3.4).attr('stroke-linecap', 'round');
+      .attr('stroke-width', 3.4).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
   }
 
+  // 5. 橋梁強調
   if (state.layers.bridge) {
     const gBridge = gMapVector.append('g');
     gBridge.selectAll('.b-rail').data(categorized.bridges).enter().append('path')
@@ -760,13 +859,15 @@ function renderMapVectorLayer() {
       .attr('stroke-width', 4.2).attr('stroke-linecap', 'butt');
   }
 
+  // 6. 鉄道
   if (state.layers.rail) {
     const gRail = gMapVector.append('g');
     gRail.selectAll('.rb').data(categorized.railways).enter().append('path')
-      .attr('d', path).attr('fill', 'none').attr('stroke', theme.railBase).attr('stroke-width', 3.2);
+      .attr('d', path).attr('fill', 'none').attr('stroke', theme.railBase)
+      .attr('stroke-width', 3.2).attr('stroke-linecap', 'round');
     gRail.selectAll('.rd').data(categorized.railways).enter().append('path')
-      .attr('d', path).attr('fill', 'none').attr('stroke', theme.railDash).attr('stroke-width', 1.8)
-      .attr('stroke-dasharray', '5,5');
+      .attr('d', path).attr('fill', 'none').attr('stroke', theme.railDash)
+      .attr('stroke-width', 1.8).attr('stroke-dasharray', '5,5').attr('stroke-linecap', 'round');
   }
 }
 
@@ -851,6 +952,7 @@ function renderLabelsLayer() {
         if (state.tool === 'eraser' || state.playback.recording) return;
         event.stopPropagation();
         selectLabel(item.id);
+        switchInspectorTab('label');
         startDragLabel(event, item);
       });
 
@@ -1089,6 +1191,7 @@ function renderRouteAndMarker() {
         .attr('stroke', '#1f2937').attr('stroke-width', 2)
         .on('pointerdown', (ev) => {
           ev.stopPropagation();
+          switchInspectorTab('route');
           startDragRouteVertex(ev, idx);
         });
     });
@@ -1217,7 +1320,7 @@ function startDragRouteVertex(startEvent, idx) {
 }
 
 /* =========================================================================
-   11. ライブ再生制御 ＆ アニメーション動画出力 (中断制御対応)
+   11. ライブ再生制御 ＆ アニメーション動画出力 (WebM)
    ========================================================================= */
 const playBtn = document.getElementById('btn-play-toggle');
 const progressSlider = document.getElementById('route-progress');
@@ -1418,7 +1521,6 @@ document.getElementById('btn-cancel-video').addEventListener('click', () => {
 /* =========================================================================
    12. プロジェクト保存・読込・D&D・初期化イベントハンドラ
    ========================================================================= */
-// JSONプロジェクト保存
 document.getElementById('btn-save-project').addEventListener('click', () => {
   try {
     const projectObj = serializeCurrentProject();
@@ -1435,14 +1537,12 @@ document.getElementById('btn-save-project').addEventListener('click', () => {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 
     showToast('📥 プロジェクト (.json) を保存しました');
-    setHudStatus('プロジェクトファイルを保存しました');
   } catch (err) {
     console.error(err);
     showToast('プロジェクト保存に失敗しました', true);
   }
 });
 
-// JSONファイル読込関数
 async function loadProjectFromFile(file) {
   if (!file) return;
   try {
@@ -1451,7 +1551,6 @@ async function loadProjectFromFile(file) {
     const cleanData = sanitizeProjectPayload(parsed);
     await applyProjectData(cleanData, true);
     showToast(`📂 プロジェクト「${file.name}」を復元しました`);
-    setHudStatus(`プロジェクト「${file.name}」を読み込みました`);
   } catch (err) {
     console.error(err);
     showToast(err.message || 'JSONファイルの読み込みに失敗しました', true);
@@ -1468,7 +1567,6 @@ fileInput.addEventListener('change', (e) => {
   if (file) loadProjectFromFile(file);
 });
 
-// ドラッグ＆ドロップでJSONプロジェクト読込
 const dropZone = document.getElementById('drop-zone');
 const dropOverlay = document.getElementById('drop-overlay');
 let dragDepth = 0;
@@ -1478,16 +1576,13 @@ dropZone.addEventListener('dragenter', (e) => {
   dragDepth++;
   dropOverlay.hidden = false;
 });
-
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
 });
-
 dropZone.addEventListener('dragleave', () => {
   dragDepth = Math.max(0, dragDepth - 1);
   if (dragDepth === 0) dropOverlay.hidden = true;
 });
-
 dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
   dragDepth = 0;
@@ -1496,7 +1591,6 @@ dropZone.addEventListener('drop', (e) => {
   if (file) loadProjectFromFile(file);
 });
 
-// プロジェクト初期化
 document.getElementById('btn-reset-project').addEventListener('click', async () => {
   localStorage.removeItem(STORAGE_AUTOSAVE_KEY);
   const fresh = sanitizeProjectPayload(createDefaultProjectState());
@@ -1505,8 +1599,29 @@ document.getElementById('btn-reset-project').addEventListener('click', async () 
 });
 
 /* =========================================================================
-   13. UI・ツール切り替え・インスペクター・ショートカットイベント
+   13. コンテキスト連動タブUI・ツールレール・インスペクター制御
    ========================================================================= */
+function switchInspectorTab(tabName) {
+  state.activeTab = tabName;
+  document.querySelectorAll('.inspector-tabs .insp-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  document.querySelectorAll('.inspector-pane').forEach(pane => {
+    pane.classList.toggle('active', pane.dataset.pane === tabName);
+  });
+}
+
+document.querySelectorAll('.inspector-tabs .insp-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    switchInspectorTab(tab);
+    if (tab === 'label') activateTool('add-label', false);
+    else if (tab === 'route') activateTool('draw-route', false);
+    else if (tab === 'eraser') activateTool('eraser', false);
+    else activateTool('select', false);
+  });
+});
+
 function selectLabel(id) {
   state.selectedLabelId = id;
   const item = state.labels.find(l => l.id === id);
@@ -1525,26 +1640,31 @@ function selectLabel(id) {
   renderLabelsLayer();
 }
 
-function activateTool(toolName) {
+function activateTool(toolName, syncTab = true) {
   state.tool = toolName;
   document.querySelectorAll('.tool-rail .rail-btn[data-tool]').forEach(b => {
     b.classList.toggle('active', b.dataset.tool === toolName);
   });
 
-  const eraserSection = document.getElementById('eraser-inspector-section');
-  eraserSection.classList.toggle('highlight-tool', state.tool === 'eraser');
   eraserCursor.style('display', state.tool === 'eraser' ? 'block' : 'none');
 
-  if (state.tool === 'select') setHudStatus('選択モード：ラベルやルート頂点をドラッグして位置調整できます');
+  if (syncTab) {
+    if (toolName === 'add-label') switchInspectorTab('label');
+    else if (toolName === 'draw-route') switchInspectorTab('route');
+    else if (toolName === 'eraser') switchInspectorTab('eraser');
+    else switchInspectorTab('map');
+  }
+
+  if (state.tool === 'select') setHudStatus('選択モード：ラベルやルート頂点をドラッグして移動できます');
   if (state.tool === 'add-label') setHudStatus('ラベル追加モード：地図上の配置したい場所をクリックしてください');
   if (state.tool === 'draw-route') setHudStatus('ルート描画モード：地図上を順番にクリックして散策ルートを伸ばします');
-  if (state.tool === 'eraser') setHudStatus('消しゴムモード：不要な道路や線をドラッグして消去できます（ラベルとルートは保護されます）');
+  if (state.tool === 'eraser') setHudStatus('消しゴムモード：不要な道路や線をドラッグして消去できます（ラベルとルートは保護）');
 
   renderRouteAndMarker();
 }
 
 document.querySelectorAll('.tool-rail .rail-btn[data-tool]').forEach(btn => {
-  btn.addEventListener('click', () => activateTool(btn.dataset.tool));
+  btn.addEventListener('click', () => activateTool(btn.dataset.tool, true));
 });
 
 svg.on('pointermove', (event) => {
@@ -1605,7 +1725,7 @@ svg.on('pointerdown', (event) => {
   }
 });
 
-// 消しゴム設定UI
+// 消しゴムUIイベント
 document.getElementById('eraser-size').addEventListener('input', (e) => {
   state.eraser.size = Number(e.target.value);
   document.getElementById('eraser-size-val').textContent = `${state.eraser.size}px`;
@@ -1625,7 +1745,7 @@ document.getElementById('btn-clear-eraser').addEventListener('click', () => {
   scheduleAutoSave();
 });
 
-// ラベルインスペクター
+// ラベルインスペクターイベント
 document.querySelectorAll('#preset-grid .preset-chip').forEach(chip => {
   chip.addEventListener('click', () => {
     document.querySelectorAll('#preset-grid .preset-chip').forEach(c => c.classList.remove('active'));
@@ -1726,11 +1846,11 @@ document.getElementById('btn-auto-labels').addEventListener('click', () => {
 });
 
 // レイヤーON/OFF・テーマ変更
-document.querySelectorAll('#layer-toggles .layer-pill').forEach(pill => {
-  pill.addEventListener('click', () => {
-    const key = pill.dataset.layer;
+document.querySelectorAll('#layer-toggles .layer-card').forEach(card => {
+  card.addEventListener('click', () => {
+    const key = card.dataset.layer;
     state.layers[key] = !state.layers[key];
-    pill.classList.toggle('active', state.layers[key]);
+    card.classList.toggle('active', state.layers[key]);
     renderMapVectorLayer();
     scheduleAutoSave();
   });
@@ -1769,7 +1889,7 @@ document.getElementById('btn-clear-route').addEventListener('click', () => {
   scheduleAutoSave();
 });
 
-// グローバルキーボードショートカット
+// キーボードショートカット
 window.addEventListener('keydown', (e) => {
   const tag = document.activeElement?.tagName;
   const isInput = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
@@ -1780,7 +1900,7 @@ window.addEventListener('keydown', (e) => {
     } else if (mapModal.classList.contains('open')) {
       closeMapModal();
     } else {
-      activateTool('select');
+      activateTool('select', true);
     }
     return;
   }
@@ -1807,45 +1927,84 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     deleteSelectedLabel();
   } else if (e.key.toLowerCase() === 'v') {
-    activateTool('select');
+    activateTool('select', true);
   } else if (e.key.toLowerCase() === 'l') {
-    activateTool('add-label');
+    activateTool('add-label', true);
   } else if (e.key.toLowerCase() === 'r') {
-    activateTool('draw-route');
+    activateTool('draw-route', true);
   } else if (e.key.toLowerCase() === 'e') {
-    activateTool('eraser');
+    activateTool('eraser', true);
+  } else if (e.key.toLowerCase() === 'm') {
+    openMapModal();
   }
 });
 
 /* =========================================================================
-   14. 地図範囲選択モーダル & SVG保存
+   14. 地図範囲・縮尺の細密選択モーダル (0.1刻み無段階ズーム + ガイド枠正確切り出し)
    ========================================================================= */
 const mapModal = document.getElementById('map-modal');
+const fineZoomSlider = document.getElementById('fine-zoom-slider');
+const fineZoomVal = document.getElementById('fine-zoom-val');
+const detailLevelSelect = document.getElementById('detail-level-select');
 let leafletMap = null;
+
+function syncModalZoomUi() {
+  if (!leafletMap) return;
+  const z = Number(leafletMap.getZoom().toFixed(1));
+  fineZoomSlider.value = z;
+  fineZoomVal.textContent = z.toFixed(1);
+  const tZoom = resolveTileZoom(z, detailLevelSelect.value);
+  document.getElementById('modal-zoom-badge').textContent = `Zoom ${z.toFixed(1)} (取得タイル Z${tZoom}) / 16:10 切り出し枠`;
+}
+
+/**
+ * モーダル中央の青い16:10ガイド枠（#crop-guide-box）が示す正確な経緯度Boundsを算出する
+ */
+function getCropGuideBounds() {
+  const mapEl = document.getElementById('leaflet-map');
+  const guideEl = document.getElementById('crop-guide-box');
+  if (!leafletMap || !mapEl || !guideEl) return leafletMap.getBounds();
+
+  const mapRect = mapEl.getBoundingClientRect();
+  const guideRect = guideEl.getBoundingClientRect();
+
+  const nwPoint = L.point(guideRect.left - mapRect.left, guideRect.top - mapRect.top);
+  const sePoint = L.point(guideRect.right - mapRect.left, guideRect.bottom - mapRect.top);
+
+  const nwLatLng = leafletMap.containerPointToLatLng(nwPoint);
+  const seLatLng = leafletMap.containerPointToLatLng(sePoint);
+  return L.latLngBounds(
+    [seLatLng.lat, nwLatLng.lng],
+    [nwLatLng.lat, seLatLng.lng]
+  );
+}
 
 function openMapModal() {
   mapModal.classList.add('open');
   if (!leafletMap) {
-    leafletMap = L.map('leaflet-map');
+    // 0.1刻みの細かな縮尺調整を可能にするLeaflet設定
+    leafletMap = L.map('leaflet-map', {
+      zoomSnap: 0.1,
+      zoomDelta: 0.2,
+      wheelPxPerZoomLevel: 140
+    });
+
     L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
       maxZoom: 18,
       attribution: '出典：国土地理院'
     }).addTo(leafletMap);
 
-    leafletMap.on('moveend zoomend', () => {
-      const z = leafletMap.getZoom();
-      const cfg = getOptimalTileConfig(z);
-      document.getElementById('modal-zoom-badge').textContent = cfg.label;
-    });
+    leafletMap.on('zoom moveend', syncModalZoomUi);
   }
 
-  const currentBounds = L.latLngBounds(
-    [state.mapRegion.south, state.mapRegion.west],
-    [state.mapRegion.north, state.mapRegion.east]
-  );
+  const centerLat = (state.mapRegion.south + state.mapRegion.north) / 2;
+  const centerLng = (state.mapRegion.west + state.mapRegion.east) / 2;
+  const targetZoom = state.mapRegion.zoom || 15.0;
+
   setTimeout(() => {
     leafletMap.invalidateSize();
-    leafletMap.fitBounds(currentBounds);
+    leafletMap.setView([centerLat, centerLng], targetZoom);
+    syncModalZoomUi();
   }, 60);
 }
 
@@ -1854,22 +2013,46 @@ function closeMapModal() {
 }
 
 document.getElementById('btn-open-map').addEventListener('click', openMapModal);
-document.getElementById('btn-center-map').addEventListener('click', openMapModal);
 document.getElementById('btn-close-modal').addEventListener('click', closeMapModal);
 
+fineZoomSlider.addEventListener('input', (e) => {
+  if (!leafletMap) return;
+  const z = Number(e.target.value);
+  leafletMap.setZoom(z);
+  syncModalZoomUi();
+});
+
+document.getElementById('btn-zoom-out').addEventListener('click', () => {
+  if (!leafletMap) return;
+  const nextZ = Math.max(7.0, Number((leafletMap.getZoom() - 0.2).toFixed(1)));
+  leafletMap.setZoom(nextZ);
+});
+
+document.getElementById('btn-zoom-in').addEventListener('click', () => {
+  if (!leafletMap) return;
+  const nextZ = Math.min(17.5, Number((leafletMap.getZoom() + 0.2).toFixed(1)));
+  leafletMap.setZoom(nextZ);
+});
+
+detailLevelSelect.addEventListener('change', syncModalZoomUi);
+
 document.getElementById('btn-preset-island').addEventListener('click', () => {
-  if (leafletMap) leafletMap.setView([34.48, 134.88], 10);
+  if (leafletMap) leafletMap.setView([34.48, 134.88], 10.2);
+});
+document.getElementById('btn-preset-city').addEventListener('click', () => {
+  if (leafletMap) leafletMap.setView([34.69, 135.19], 13.0);
 });
 document.getElementById('btn-preset-town').addEventListener('click', () => {
-  if (leafletMap) leafletMap.setView([34.815, 135.345], 15);
+  if (leafletMap) leafletMap.setView([34.815, 135.345], 15.5);
 });
 
 document.getElementById('btn-execute-extract').addEventListener('click', async () => {
   if (!leafletMap) return;
-  const bounds = leafletMap.getBounds();
-  const zoom = leafletMap.getZoom();
+  const cropBounds = getCropGuideBounds();
+  const zoom = Number(leafletMap.getZoom().toFixed(1));
+  const detailMode = detailLevelSelect.value;
   closeMapModal();
-  await extractVectorMapFromBounds(bounds, zoom);
+  await extractVectorMapFromBounds(cropBounds, zoom, detailMode);
 });
 
 // SVG保存
@@ -1901,7 +2084,7 @@ document.getElementById('btn-export-svg').addEventListener('click', () => {
 });
 
 /* =========================================================================
-   15. 初期起動処理（自動バックアップの復元または初期サンプル描画）
+   15. 初期起動処理
    ========================================================================= */
 (async function initApp() {
   let initialProject = null;
