@@ -168,9 +168,9 @@ body {
 }
 
 .btn-mini {
-  height: 24px;
+  height: 23px;
   padding: 0 8px;
-  font-size: 0.72rem;
+  font-size: 0.71rem;
   font-weight: 600;
   border-radius: 4px;
   border: 1px solid var(--border-medium);
@@ -272,7 +272,7 @@ body {
   border-color: #bfdbfe;
 }
 
-/* 中央キャンバスステージ（縦横の線やドットを一切排除したフラットな薄グレー） */
+/* 中央キャンバスステージ */
 .canvas-stage {
   flex: 1;
   background: var(--bg-workspace);
@@ -428,9 +428,9 @@ body {
   cursor: pointer;
 }
 
-/* 3. 右インスペクター（コンテキストタブ切り替え式） */
+/* 3. 右インスペクター */
 .inspector {
-  width: 300px;
+  width: 308px;
   background: var(--bg-panel);
   border-left: 1px solid var(--border-light);
   display: flex;
@@ -482,11 +482,81 @@ body {
 }
 
 .pane-block {
-  padding: 16px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border-light);
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* 水域設定専用ブロック */
+.water-custom-block {
+  background: #f8fafc;
+}
+
+.badge-tag {
+  font-size: 0.68rem;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-weight: 700;
+}
+
+.sub-label {
+  font-size: 0.73rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.sub-hint {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* 2択セグメントトグル（塗りつぶす / 塗りつぶさない） */
+.segmented-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--border-light);
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  gap: 2px;
+}
+
+.seg-opt {
+  height: 27px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.seg-opt.active {
+  background: var(--bg-panel);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.color-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-hex-label {
+  font-size: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-secondary);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-light);
+  padding: 4px 8px;
+  border-radius: 4px;
 }
 
 .form-row {
@@ -495,8 +565,13 @@ body {
   gap: 5px;
 }
 
+.form-row.disabled-row {
+  opacity: 0.42;
+  pointer-events: none;
+}
+
 .form-label {
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   color: var(--text-secondary);
   font-weight: 600;
   display: flex;
@@ -511,9 +586,9 @@ body {
   padding: 0 10px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-medium);
-  background: var(--bg-subtle);
+  background: var(--bg-panel);
   color: var(--text-primary);
-  font-size: 0.81rem;
+  font-size: 0.8rem;
 }
 
 .color-input {
@@ -525,7 +600,6 @@ body {
 .form-select:focus {
   outline: none;
   border-color: var(--accent);
-  background: #ffffff;
 }
 
 input[type="range"] {
@@ -551,12 +625,12 @@ input[type="range"] {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 8px 10px;
+  padding: 7px 10px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-light);
   background: var(--bg-subtle);
   color: var(--text-muted);
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.14s;
@@ -617,7 +691,7 @@ input[type="range"] {
 
 .help-note {
   margin: 2px 0 0 0;
-  font-size: 0.72rem;
+  font-size: 0.71rem;
   color: var(--text-muted);
   line-height: 1.45;
 }
