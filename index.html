@@ -14,7 +14,7 @@
 </head>
 <body>
 
-  <!-- 1. スッキリ整理されたトップバー -->
+  <!-- 1. トップバー -->
   <header class="topbar">
     <div class="topbar-left">
       <div class="brand">
@@ -28,7 +28,7 @@
     </div>
 
     <div class="topbar-right">
-      <!-- プロジェクト管理（コンパクトグループ） -->
+      <!-- プロジェクト管理 -->
       <div class="segmented-actions" role="group" aria-label="プロジェクト管理">
         <button type="button" class="btn-seg" id="btn-save-project" title="作業状態をJSONファイルとして保存">📥 保存</button>
         <button type="button" class="btn-seg" id="btn-load-project" title="保存したJSONファイルを読み込む">📂 読込</button>
@@ -51,11 +51,11 @@
       <div class="drop-overlay-box">
         <span style="font-size:2rem;">📂</span>
         <strong>プロジェクトファイル (.json) をドロップして復元</strong>
-        <span>地図範囲・縮尺・ラベル・散策ルート・消しゴム履歴を読み込みます</span>
+        <span>地図範囲・縮尺・水際設定・ラベル・散策ルート・消しゴム履歴を読み込みます</span>
       </div>
     </div>
 
-    <!-- 左ツールレール（クリックすると右パネルも自動連動） -->
+    <!-- 左ツールレール -->
     <nav class="tool-rail" aria-label="編集ツール選択">
       <button type="button" class="rail-btn active" data-tool="select" title="選択・移動モード (V)">
         <span class="rail-icon">🖱️</span>
@@ -75,7 +75,7 @@
       </button>
     </nav>
 
-    <!-- 中央キャンバスステージ（余計な格子やドットのないフラット薄グレー） -->
+    <!-- 中央キャンバスステージ -->
     <main class="canvas-stage" id="canvas-stage">
       <div class="canvas-hud">
         <span class="status-dot" id="hud-dot"></span>
@@ -121,7 +121,7 @@
       <div class="toast-container" id="toast-container" aria-live="polite"></div>
     </main>
 
-    <!-- 右インスペクター（4タブ切り替え式でスッキリ整理） -->
+    <!-- 右インスペクター（4タブ切り替え式） -->
     <aside class="inspector">
       <div class="inspector-tabs" role="tablist">
         <button type="button" class="insp-tab active" data-tab="map" role="tab">🗺️ 地図</button>
@@ -130,18 +130,62 @@
         <button type="button" class="insp-tab" data-tab="eraser" role="tab">🧽 消去</button>
       </div>
 
-      <!-- タブ1: 地図スタイル・表示レイヤー -->
+      <!-- タブ1: 地図スタイル・水域設定・表示レイヤー -->
       <div class="inspector-pane active" data-pane="map">
         <div class="pane-block">
           <label class="form-label" for="theme-select">配色・透過テーマ</label>
           <select id="theme-select" class="form-select">
-            <option value="tv-ivory">テレビ標準 (アイボリー背景)</option>
-            <option value="soft-gray">モダン薄グレー</option>
-            <option value="pastel-walk">街歩きパステル</option>
-            <option value="retro-map">古地図・和風トーン</option>
-            <option value="line-trans-dark">★ 線画で透過 (黒線＋白フチ)</option>
-            <option value="line-trans-light">★ 線画で透過 (白線＋黒フチ)</option>
+            <optgroup label="通常背景テーマ">
+              <option value="tv-ivory">テレビ標準 (アイボリー背景)</option>
+              <option value="soft-gray">モダン薄グレー</option>
+              <option value="pastel-walk">街歩きパステル</option>
+              <option value="retro-map">古地図・和風トーン</option>
+            </optgroup>
+            <optgroup label="線画・手書き風テーマ (背景透過)">
+              <option value="line-trans-dark">★ 線画で透過 (黒線＋白フチ)</option>
+              <option value="line-trans-light">★ 線画で透過 (白線＋黒フチ)</option>
+              <option value="hand-drawn-1">✎ 手書き風１ (ペン画スケッチ)</option>
+              <option value="hand-drawn-2">✒️ 手書き風２ (やわらかインク調)</option>
+            </optgroup>
           </select>
+        </div>
+
+        <!-- 要件①: 河川・湖沼・海の塗りつぶし＆水際境界線設定 -->
+        <div class="pane-block water-custom-block" id="water-config-block">
+          <div class="form-label">
+            <span>🌊 河川・湖沼・海の表現</span>
+            <span class="badge-tag" id="water-mode-badge">水際輪郭</span>
+          </div>
+
+          <div class="form-row">
+            <span class="sub-label">水域（海・川・湖）の塗りつぶし</span>
+            <div class="segmented-toggle" id="water-fill-toggle" role="radiogroup" aria-label="水域の塗りつぶし選択">
+              <button type="button" class="seg-opt" data-fill="false">塗りつぶさない</button>
+              <button type="button" class="seg-opt active" data-fill="true">塗りつぶす</button>
+            </div>
+          </div>
+
+          <div class="form-row" id="water-color-row">
+            <div class="form-label">
+              <label for="water-fill-color">塗りつぶす色 <span class="sub-hint">(標準: 薄水色)</span></label>
+              <button type="button" class="btn-mini" id="btn-reset-water-color" title="標準のかなり薄い水色 (#e6f6ff) に戻す">標準色に戻す</button>
+            </div>
+            <div class="color-picker-row">
+              <input type="color" id="water-fill-color" class="form-input color-input" value="#e6f6ff">
+              <span class="color-hex-label" id="water-color-hex">#e6f6ff</span>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label" for="coast-stroke-width">
+              <span>陸地と水域の境界線の太さ</span>
+              <strong id="coast-width-val">5.0px</strong>
+            </label>
+            <input type="range" id="coast-stroke-width" min="1.5" max="14.0" step="0.5" value="5.0">
+            <p class="help-note" id="coast-stroke-note">
+              線画・手書き風テーマでは、縁取りなしで線画と同一色の太い輪郭線として描かれます。
+            </p>
+          </div>
         </div>
 
         <div class="pane-block">
@@ -173,7 +217,6 @@
           <button type="button" class="btn" id="btn-auto-labels" style="width:100%;">
             ✨ 地図内の主要地名・駅名を自動配置
           </button>
-          <p class="help-note">現在の地図に含まれる駅名や主要施設をラベルとして自動配置します。</p>
         </div>
       </div>
 
@@ -316,13 +359,11 @@
 
       <div class="modal-body">
         <div id="leaflet-map"></div>
-        <!-- 切り出し範囲と完全一致する16:10ガイド枠 -->
         <div class="map-crop-guide" id="crop-guide-box">
           <span id="modal-zoom-badge">Zoom 15.0 / 切り出し枠 (16:10)</span>
         </div>
       </div>
 
-      <!-- 細密な縮尺スライダー＆ディテール密度指定フッター -->
       <div class="modal-footer">
         <div class="zoom-fine-controls">
           <div class="zoom-control-item">
