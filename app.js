@@ -2,10 +2,11 @@ import { VectorTile } from 'https://esm.sh/@mapbox/vector-tile@1.3.1';
 import Pbf from 'https://esm.sh/pbf@3.2.1';
 
 /* =========================================================================
-   1. 定数・テーマ定義・ホワイトリスト
+   1. 定数・テーマ定義（手書き風1・2含む全8種）・ホワイトリスト
    ========================================================================= */
-const APP_SCHEMA_VERSION = '1.1.0';
-const STORAGE_AUTOSAVE_KEY = 'wipemap_studio_pro_autosave_v2';
+const APP_SCHEMA_VERSION = '1.2.0';
+const STORAGE_AUTOSAVE_KEY = 'wipemap_studio_pro_autosave_v3';
+const DEFAULT_LIGHT_WATER_COLOR = '#e6f6ff'; // 標準の「かなり薄い水色」
 const SVG_W = 800;
 const SVG_H = 500;
 
@@ -16,9 +17,18 @@ const VALID_ROUTE_CURVES = new Set(['catmull', 'linear']);
 const VALID_DETAIL_MODES = new Set(['auto', '9', '11', '13', '14', '16']);
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
 
+/**
+ * テーマ定義
+ * - isLineArt: true のテーマでは、陸地と水域（海・川・湖）の境界線を
+ *   縁取りなしで `primaryLineColor`（線画と同一色）の太線として描画する
+ * - sketchFilter: 手書き風1・2用のSVG変位フィルタID
+ */
 const THEMES = Object.freeze({
   'tv-ivory': {
     transparent: false,
+    isLineArt: false,
+    sketchFilter: null,
+    primaryLineColor: '#5aa5db',
     land: '#f6f5f0',
     water: '#a8d8f8',
     waterStroke: '#5aa5db',
@@ -32,6 +42,9 @@ const THEMES = Object.freeze({
   },
   'soft-gray': {
     transparent: false,
+    isLineArt: false,
+    sketchFilter: null,
+    primaryLineColor: '#94a3b8',
     land: '#f3f4f6',
     water: '#cbd5e1',
     waterStroke: '#94a3b8',
@@ -45,6 +58,9 @@ const THEMES = Object.freeze({
   },
   'pastel-walk': {
     transparent: false,
+    isLineArt: false,
+    sketchFilter: null,
+    primaryLineColor: '#38bdf8',
     land: '#fef9f5',
     water: '#bae6fd',
     waterStroke: '#38bdf8',
@@ -58,6 +74,9 @@ const THEMES = Object.freeze({
   },
   'retro-map': {
     transparent: false,
+    isLineArt: false,
+    sketchFilter: null,
+    primaryLineColor: '#5c8a9e',
     land: '#efe8d8',
     water: '#9bc1bc',
     waterStroke: '#5c8a9e',
@@ -71,29 +90,69 @@ const THEMES = Object.freeze({
   },
   'line-trans-dark': {
     transparent: true,
+    isLineArt: true,
+    sketchFilter: null,
+    primaryLineColor: '#1f2937', // 黒線画と同一色
     land: 'none',
-    water: 'none',
-    waterStroke: '#0284c7',
+    water: DEFAULT_LIGHT_WATER_COLOR,
+    waterStroke: '#1f2937',
     majorRoad: '#1f2937',
     majorCase: '#ffffff',
-    minorRoad: '#4b5563',
+    minorRoad: '#374151',
     minorCase: '#ffffff',
-    border: '#64748b',
+    border: '#4b5563',
     railBase: '#111827',
     railDash: '#ffffff'
   },
   'line-trans-light': {
     transparent: true,
+    isLineArt: true,
+    sketchFilter: null,
+    primaryLineColor: '#ffffff', // 白線画と同一色
     land: 'none',
-    water: 'none',
-    waterStroke: '#38bdf8',
+    water: DEFAULT_LIGHT_WATER_COLOR,
+    waterStroke: '#ffffff',
     majorRoad: '#ffffff',
     majorCase: '#1f2937',
     minorRoad: '#f3f4f6',
     minorCase: '#374151',
-    border: '#cbd5e1',
+    border: '#e2e8f0',
     railBase: '#ffffff',
     railDash: '#1f2937'
+  },
+  'hand-drawn-1': {
+    // ✎ 手書き風１：チャコールブラックのミリペン・サインペンスケッチ調（単線主体・細密揺らぎ）
+    transparent: true,
+    isLineArt: true,
+    sketchFilter: 'url(#hand-drawn-filter-1)',
+    primaryLineColor: '#2c2523', // ペンインク色と同一
+    land: 'none',
+    water: DEFAULT_LIGHT_WATER_COLOR,
+    waterStroke: '#2c2523',
+    majorRoad: '#2c2523',
+    majorCase: 'none',
+    minorRoad: '#4a423f',
+    minorCase: 'none',
+    border: '#6b625e',
+    railBase: '#2c2523',
+    railDash: '#ffffff'
+  },
+  'hand-drawn-2': {
+    // ✒️ 手書き風２：手書き風１の派生。万年筆インディゴインク＋白抜き縁取り・ゆったりした手描き揺らぎ
+    transparent: true,
+    isLineArt: true,
+    sketchFilter: 'url(#hand-drawn-filter-2)',
+    primaryLineColor: '#1e3a5f', // 万年筆ブルーブラックと同一
+    land: 'none',
+    water: DEFAULT_LIGHT_WATER_COLOR,
+    waterStroke: '#1e3a5f',
+    majorRoad: '#1e3a5f',
+    majorCase: '#ffffff',
+    minorRoad: '#334e68',
+    minorCase: '#ffffff',
+    border: '#486581',
+    railBase: '#1e3a5f',
+    railDash: '#f0f4f8'
   }
 });
 
@@ -168,6 +227,11 @@ async function runWithConcurrency(tasks, concurrency = 6) {
 function createDefaultProjectState() {
   return {
     theme: 'tv-ivory',
+    waterConfig: {
+      fillWater: true,
+      fillColor: DEFAULT_LIGHT_WATER_COLOR, // 標準：かなり薄い水色 (#e6f6ff)
+      coastStrokeWidth: 5.0                 // 通常の道路線より太い初期値 (5.0px)
+    },
     layers: {
       coast: true,
       border: true,
@@ -212,9 +276,10 @@ function createDefaultProjectState() {
 const defaults = createDefaultProjectState();
 
 const state = {
-  tool: 'select', // 'select' | 'add-label' | 'draw-route' | 'eraser'
-  activeTab: 'map', // 'map' | 'label' | 'route' | 'eraser'
+  tool: 'select',
+  activeTab: 'map',
   theme: defaults.theme,
+  waterConfig: { ...defaults.waterConfig },
   layers: { ...defaults.layers },
   mapRegion: { ...defaults.mapRegion },
   mapGeoData: null,
@@ -289,6 +354,14 @@ function sanitizeProjectPayload(raw) {
 
   const def = createDefaultProjectState();
   const theme = Object.prototype.hasOwnProperty.call(THEMES, raw.theme) ? raw.theme : def.theme;
+
+  // 水域・水際境界線設定の検証
+  const rw = (raw.waterConfig && typeof raw.waterConfig === 'object') ? raw.waterConfig : {};
+  const waterConfig = {
+    fillWater: rw.fillWater !== undefined ? Boolean(rw.fillWater) : def.waterConfig.fillWater,
+    fillColor: sanitizeColor(rw.fillColor, DEFAULT_LIGHT_WATER_COLOR),
+    coastStrokeWidth: Number(clampNumber(rw.coastStrokeWidth, 1.5, 14.0, def.waterConfig.coastStrokeWidth).toFixed(1))
+  };
 
   const rawLayers = (raw.layers && typeof raw.layers === 'object') ? raw.layers : {};
   const layers = {
@@ -381,6 +454,7 @@ function sanitizeProjectPayload(raw) {
   return {
     version: APP_SCHEMA_VERSION,
     theme,
+    waterConfig,
     layers,
     mapRegion,
     eraser: { size: eraserSize, strokes },
@@ -397,6 +471,7 @@ function serializeCurrentProject() {
     version: APP_SCHEMA_VERSION,
     savedAt: new Date().toISOString(),
     theme: state.theme,
+    waterConfig: { ...state.waterConfig },
     layers: { ...state.layers },
     mapRegion: { ...state.mapRegion },
     eraser: {
@@ -430,6 +505,7 @@ async function applyProjectData(cleanData, fetchMap = true) {
   stopPlayback();
 
   state.theme = cleanData.theme;
+  state.waterConfig = { ...cleanData.waterConfig };
   state.layers = { ...cleanData.layers };
   state.mapRegion = { ...cleanData.mapRegion };
   state.eraser.size = cleanData.eraser.size;
@@ -459,8 +535,38 @@ async function applyProjectData(cleanData, fetchMap = true) {
   scheduleAutoSave();
 }
 
+function syncWaterUiFromState() {
+  const themeObj = THEMES[state.theme] || THEMES['tv-ivory'];
+  const badge = document.getElementById('water-mode-badge');
+  if (badge) {
+    badge.textContent = themeObj.isLineArt ? '線画と同色・太線輪郭' : 'テーマ標準輪郭';
+  }
+
+  document.querySelectorAll('#water-fill-toggle .seg-opt').forEach(btn => {
+    const isFill = btn.dataset.fill === 'true';
+    btn.classList.toggle('active', isFill === state.waterConfig.fillWater);
+  });
+
+  const colorRow = document.getElementById('water-color-row');
+  if (colorRow) {
+    colorRow.classList.toggle('disabled-row', !state.waterConfig.fillWater);
+  }
+
+  const colorInput = document.getElementById('water-fill-color');
+  const hexLabel = document.getElementById('water-color-hex');
+  if (colorInput) colorInput.value = state.waterConfig.fillColor;
+  if (hexLabel) hexLabel.textContent = state.waterConfig.fillColor;
+
+  const widthSlider = document.getElementById('coast-stroke-width');
+  const widthVal = document.getElementById('coast-width-val');
+  if (widthSlider) widthSlider.value = state.waterConfig.coastStrokeWidth;
+  if (widthVal) widthVal.textContent = `${Number(state.waterConfig.coastStrokeWidth).toFixed(1)}px`;
+}
+
 function syncAllUiControlsFromState() {
   document.getElementById('theme-select').value = state.theme;
+  syncWaterUiFromState();
+
   document.querySelectorAll('#layer-toggles .layer-card').forEach(card => {
     const key = card.dataset.layer;
     card.classList.toggle('active', Boolean(state.layers[key]));
@@ -487,17 +593,55 @@ function syncAllUiControlsFromState() {
 }
 
 /* =========================================================================
-   6. SVGレイヤー＆非破壊消しゴムマスク構造の初期化
+   6. SVGレイヤー・手書き風フィルタ（2種）・非破壊消しゴムマスクの初期化
    ========================================================================= */
 const svg = d3.select('#wipe-svg');
 const defs = svg.append('defs');
 
-// 地図外枠クリップパス（線がキャンバス外へはみ出すのを防ぐ）
+// 地図外枠クリップパス
 defs.append('clipPath')
   .attr('id', 'canvas-clip')
   .append('rect')
   .attr('x', 0).attr('y', 0)
   .attr('width', SVG_W).attr('height', SVG_H);
+
+// 要件②: 手書き風１フィルタ（ミリペン・サインペン調の細密なペン先揺らぎ）
+const filterHand1 = defs.append('filter')
+  .attr('id', 'hand-drawn-filter-1')
+  .attr('x', '-5%').attr('y', '-5%')
+  .attr('width', '110%').attr('height', '110%')
+  .attr('filterUnits', 'objectBoundingBox');
+filterHand1.append('feTurbulence')
+  .attr('type', 'fractalNoise')
+  .attr('baseFrequency', '0.04')
+  .attr('numOctaves', '3')
+  .attr('seed', '12')
+  .attr('result', 'noise1');
+filterHand1.append('feDisplacementMap')
+  .attr('in', 'SourceGraphic')
+  .attr('in2', 'noise1')
+  .attr('scale', '2.2')
+  .attr('xChannelSelector', 'R')
+  .attr('yChannelSelector', 'G');
+
+// 要件②: 手書き風２フィルタ（少し変更を加えた、やわらかくゆったりした手描きイラスト揺らぎ）
+const filterHand2 = defs.append('filter')
+  .attr('id', 'hand-drawn-filter-2')
+  .attr('x', '-5%').attr('y', '-5%')
+  .attr('width', '110%').attr('height', '110%')
+  .attr('filterUnits', 'objectBoundingBox');
+filterHand2.append('feTurbulence')
+  .attr('type', 'turbulence')
+  .attr('baseFrequency', '0.022')
+  .attr('numOctaves', '2')
+  .attr('seed', '29')
+  .attr('result', 'noise2');
+filterHand2.append('feDisplacementMap')
+  .attr('in', 'SourceGraphic')
+  .attr('in2', 'noise2')
+  .attr('scale', '3.1')
+  .attr('xChannelSelector', 'R')
+  .attr('yChannelSelector', 'G');
 
 // 消しゴム用SVGマスク（白＝表示、黒＝消去）
 const eraserMask = defs.append('mask')
@@ -576,12 +720,12 @@ function resolveTileZoom(mapZoom, detailMode = 'auto') {
 }
 
 /**
- * タイル内部のLineStringから、タイル外周（0 または extent=4096）に張り付いた
- * 人工的なクリップ境界線（縦横の格子線の原因）を除外して経緯度GeoJSONへ変換する
+ * タイル内部のLineStringまたはPolygon外周から、タイル境界（0 または extent=4096）に
+ * 張り付いた人工クリップエッジを除外し、純粋な地理境界線だけをMultiLineStringとして抽出する
  */
-function extractCleanLineFeatures(rawFeat, tileX, tileY, tileZoom) {
+function extractCleanEdgesFromGeometry(rawFeat, tileX, tileY, tileZoom, closeRings = false) {
   const extent = rawFeat.extent || 4096;
-  const margin = 2; // タイル端の判定マージン
+  const margin = 2;
   const rawPaths = rawFeat.loadGeometry();
   const cleanMultiCoords = [];
 
@@ -601,13 +745,13 @@ function extractCleanLineFeatures(rawFeat, tileX, tileY, tileZoom) {
 
   for (const ring of rawPaths) {
     if (ring.length < 2) continue;
-    let currentSubPath = [projectPt(ring[0])];
+    const pts = closeRings ? [...ring, ring[0]] : ring;
+    let currentSubPath = [projectPt(pts[0])];
 
-    for (let i = 0; i < ring.length - 1; i++) {
-      const p1 = ring[i];
-      const p2 = ring[i + 1];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
       if (isOnSameTileEdge(p1, p2)) {
-        // タイル境界上を走る人工エッジはスキップして線を分割
         if (currentSubPath.length >= 2) {
           cleanMultiCoords.push(currentSubPath);
         }
@@ -657,7 +801,6 @@ async function extractVectorMapFromBounds(bounds, mapZoom, detailMode = state.ma
   let minX = lon2tile(minLng, activeTileZoom), maxX = lon2tile(maxLng, activeTileZoom);
   let minY = lat2tile(maxLat, activeTileZoom), maxY = lat2tile(minLat, activeTileZoom);
 
-  // タイル枚数が多すぎる場合は自動で1段下げてブラウザメモリを保護
   while ((maxX - minX + 1) * (maxY - minY + 1) > 28 && activeTileZoom > 8) {
     activeTileZoom--;
     minX = lon2tile(minLng, activeTileZoom);
@@ -701,6 +844,8 @@ async function extractVectorMapFromBounds(bounds, mapZoom, detailMode = state.ma
       continue;
     }
 
+    const hasExplicitWaterLine = Boolean(tile.layers.wl || tile.layers.coastline);
+
     for (const layerName of Object.keys(tile.layers)) {
       const layer = tile.layers[layerName];
       const ln = layerName.toLowerCase();
@@ -709,23 +854,27 @@ async function extractVectorMapFromBounds(bounds, mapZoom, detailMode = state.ma
         const rawFeat = layer.feature(i);
         const props = rawFeat.properties || {};
 
-        // rawFeat.type: 1=Point, 2=LineString, 3=Polygon
         if (rawFeat.type === 3) {
-          // 水域面（wa / waterarea）のみ抽出し、タイル境界線を出さないよう塗り専用として扱う
+          // 水域ポリゴン（海・湖沼・大河川）
           if (ln === 'wa' || ln.includes('waterarea') || ln.includes('lake')) {
             const geo = rawFeat.toGeoJSON(x, y, activeTileZoom);
             categorized.waterArea.push(geo);
+
+            // 水涯線(wl/coastline)レイヤーが存在しないズーム帯では、水域ポリゴンから非タイル境界の輪郭線を抽出して補完
+            if (!hasExplicitWaterLine) {
+              const polyOutline = extractCleanEdgesFromGeometry(rawFeat, x, y, activeTileZoom, true);
+              if (polyOutline) categorized.coastline.push(polyOutline);
+            }
           }
         } else if (rawFeat.type === 2) {
-          // 線データはタイル外周クリップエッジを除去して抽出
           if (ln === 'coastline' || ln === 'wl' || ln === 'rvrcl' || ln.includes('river') || ln.includes('water')) {
-            const cleanLine = extractCleanLineFeatures(rawFeat, x, y, activeTileZoom);
+            const cleanLine = extractCleanEdgesFromGeometry(rawFeat, x, y, activeTileZoom, false);
             if (cleanLine) categorized.coastline.push(cleanLine);
           } else if (ln === 'bndl' || ln.includes('bnd') || ln.includes('adm')) {
-            const cleanLine = extractCleanLineFeatures(rawFeat, x, y, activeTileZoom);
+            const cleanLine = extractCleanEdgesFromGeometry(rawFeat, x, y, activeTileZoom, false);
             if (cleanLine) categorized.borders.push(cleanLine);
           } else if (ln === 'rdcl' || ln.includes('road')) {
-            const cleanLine = extractCleanLineFeatures(rawFeat, x, y, activeTileZoom);
+            const cleanLine = extractCleanEdgesFromGeometry(rawFeat, x, y, activeTileZoom, false);
             if (!cleanLine) continue;
 
             const rdCtg = props.rdCtg ?? props.ftCode;
@@ -740,7 +889,7 @@ async function extractVectorMapFromBounds(bounds, mapZoom, detailMode = state.ma
             if (isMajor) categorized.majorRoads.push(cleanLine);
             else categorized.minorRoads.push(cleanLine);
           } else if (ln === 'railcl' || ln.includes('rail')) {
-            const cleanLine = extractCleanLineFeatures(rawFeat, x, y, activeTileZoom);
+            const cleanLine = extractCleanEdgesFromGeometry(rawFeat, x, y, activeTileZoom, false);
             if (cleanLine) categorized.railways.push(cleanLine);
           }
         } else if (rawFeat.type === 1) {
@@ -760,7 +909,6 @@ async function extractVectorMapFromBounds(bounds, mapZoom, detailMode = state.ma
     }
   }
 
-  // 切り出し枠のBBoxをキャンバス(800x500)全面に余白なしでフィットさせる
   const projection = d3.geoMercator().fitExtent([[0, 0], [SVG_W, SVG_H]], {
     type: 'FeatureCollection',
     features: [
@@ -771,13 +919,17 @@ async function extractVectorMapFromBounds(bounds, mapZoom, detailMode = state.ma
 
   state.mapGeoData = { categorized, projection };
   renderMapVectorLayer();
-  setHudStatus(`線画生成完了（幹線:${categorized.majorRoads.length} / 街路:${categorized.minorRoads.length} / 橋:${categorized.bridges.length}）`, false);
+  setHudStatus(`線画生成完了（幹線:${categorized.majorRoads.length} / 街路:${categorized.minorRoads.length} / 水際:${categorized.coastline.length}）`, false);
 }
 
+/**
+ * 地図ベクターレイヤーの描画（要件①の水域塗りつぶし・線画同一色太線輪郭 ＆ 要件②の手書き風フィルタ対応）
+ */
 function renderMapVectorLayer() {
   const theme = THEMES[state.theme] || THEMES['tv-ivory'];
   const wipeFrame = document.getElementById('wipe-frame');
 
+  // 背景透過判定
   if (theme.transparent) {
     gBaseBg.attr('fill', 'none').attr('opacity', 0);
     wipeFrame.classList.add('transparent-checker');
@@ -786,76 +938,104 @@ function renderMapVectorLayer() {
     wipeFrame.classList.remove('transparent-checker');
   }
 
+  // 手書き風1・2のSVG変位フィルタ適用
+  if (theme.sketchFilter) {
+    gMapVector.attr('filter', theme.sketchFilter);
+  } else {
+    gMapVector.attr('filter', null);
+  }
+
   gMapVector.selectAll('*').remove();
   if (!state.mapGeoData) return;
 
   const { categorized, projection } = state.mapGeoData;
   const path = d3.geoPath().projection(projection);
 
-  // 1. 水域面と海岸線・河川ライン（タイル境界の縦横線が出ないよう水面ポリゴンには異なる色のstrokeを付けない）
+  // 1. 河川・湖沼・海の塗りつぶしと水際境界線（要件①）
   if (state.layers.coast) {
-    if (!theme.transparent) {
+    const shouldFillWater = state.waterConfig.fillWater;
+    // 線画モード時またはカスタム時はユーザー指定の薄水色（標準 #e6f6ff）を使用
+    const waterFillColor = theme.isLineArt
+      ? state.waterConfig.fillColor
+      : (state.waterConfig.fillColor !== DEFAULT_LIGHT_WATER_COLOR ? state.waterConfig.fillColor : theme.water);
+
+    if (shouldFillWater) {
       gMapVector.append('g').selectAll('path')
         .data(categorized.waterArea).enter().append('path')
         .attr('d', path)
-        .attr('fill', theme.water)
-        .attr('stroke', theme.water)
-        .attr('stroke-width', 0.6)
+        .attr('fill', waterFillColor)
+        // タイル継ぎ目のアンチエイリアス隙間を埋めるための同色極細ストローク（縦横の境界線は一切出ない）
+        .attr('stroke', waterFillColor)
+        .attr('stroke-width', 0.7)
         .attr('stroke-linejoin', 'round');
     }
+
+    // 陸地と「河川・湖沼・海」との境界線
+    // 線画テーマ（isLineArt: true）では縁取り不要・線画の色と同一（theme.primaryLineColor）・調整可能な太線で描画
+    const coastColor = theme.isLineArt ? theme.primaryLineColor : theme.waterStroke;
+    const coastWidth = Number(state.waterConfig.coastStrokeWidth) || 5.0;
 
     gMapVector.append('g').selectAll('path')
       .data(categorized.coastline).enter().append('path')
       .attr('d', path)
       .attr('fill', 'none')
-      .attr('stroke', theme.waterStroke)
-      .attr('stroke-width', 2.2)
+      .attr('stroke', coastColor)
+      .attr('stroke-width', coastWidth)
       .attr('stroke-linecap', 'round')
       .attr('stroke-linejoin', 'round');
   }
 
-  // 2. 市区町村界（タイル端のクリップエッジ除去済み）
+  // 2. 市区町村界
   if (state.layers.border) {
+    const borderDash = state.theme === 'hand-drawn-2' ? '3,5' : '6,4';
     gMapVector.append('g').selectAll('path')
       .data(categorized.borders).enter().append('path')
       .attr('d', path)
       .attr('fill', 'none')
       .attr('stroke', theme.border)
       .attr('stroke-width', 1.4)
-      .attr('stroke-dasharray', '6,4')
+      .attr('stroke-dasharray', borderDash)
       .attr('stroke-linecap', 'round');
   }
 
   // 3. 地域道路
   if (state.layers.minorRoad) {
     const gMinor = gMapVector.append('g');
-    gMinor.selectAll('.c').data(categorized.minorRoads).enter().append('path')
-      .attr('d', path).attr('fill', 'none').attr('stroke', theme.minorCase)
-      .attr('stroke-width', 4).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+    if (theme.minorCase && theme.minorCase !== 'none') {
+      gMinor.selectAll('.c').data(categorized.minorRoads).enter().append('path')
+        .attr('d', path).attr('fill', 'none').attr('stroke', theme.minorCase)
+        .attr('stroke-width', 4).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+    }
     gMinor.selectAll('.r').data(categorized.minorRoads).enter().append('path')
       .attr('d', path).attr('fill', 'none').attr('stroke', theme.minorRoad)
-      .attr('stroke-width', 2.2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+      .attr('stroke-width', state.theme === 'hand-drawn-1' ? 1.8 : 2.2)
+      .attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
   }
 
   // 4. 幹線道路
   if (state.layers.majorRoad) {
     const gMajor = gMapVector.append('g');
-    gMajor.selectAll('.c').data(categorized.majorRoads).enter().append('path')
-      .attr('d', path).attr('fill', 'none').attr('stroke', theme.majorCase)
-      .attr('stroke-width', 5.8).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+    if (theme.majorCase && theme.majorCase !== 'none') {
+      gMajor.selectAll('.c').data(categorized.majorRoads).enter().append('path')
+        .attr('d', path).attr('fill', 'none').attr('stroke', theme.majorCase)
+        .attr('stroke-width', 5.8).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+    }
     gMajor.selectAll('.r').data(categorized.majorRoads).enter().append('path')
       .attr('d', path).attr('fill', 'none').attr('stroke', theme.majorRoad)
-      .attr('stroke-width', 3.4).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+      .attr('stroke-width', state.theme === 'hand-drawn-1' ? 3.2 : 3.5)
+      .attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
   }
 
   // 5. 橋梁強調
   if (state.layers.bridge) {
     const gBridge = gMapVector.append('g');
+    const bridgeOuter = theme.isLineArt ? theme.primaryLineColor : '#334155';
+    const bridgeInner = state.theme === 'line-trans-light' ? '#1f2937' : '#ffffff';
     gBridge.selectAll('.b-rail').data(categorized.bridges).enter().append('path')
-      .attr('d', path).attr('fill', 'none').attr('stroke', '#334155')
+      .attr('d', path).attr('fill', 'none').attr('stroke', bridgeOuter)
       .attr('stroke-width', 7.5).attr('stroke-linecap', 'butt');
     gBridge.selectAll('.b-deck').data(categorized.bridges).enter().append('path')
-      .attr('d', path).attr('fill', 'none').attr('stroke', '#ffffff')
+      .attr('d', path).attr('fill', 'none').attr('stroke', bridgeInner)
       .attr('stroke-width', 4.2).attr('stroke-linecap', 'butt');
   }
 
@@ -1599,7 +1779,7 @@ document.getElementById('btn-reset-project').addEventListener('click', async () 
 });
 
 /* =========================================================================
-   13. コンテキスト連動タブUI・ツールレール・インスペクター制御
+   13. コンテキスト連動タブUI・水域設定・ツールレール制御
    ========================================================================= */
 function switchInspectorTab(tabName) {
   state.activeTab = tabName;
@@ -1725,7 +1905,49 @@ svg.on('pointerdown', (event) => {
   }
 });
 
-// 消しゴムUIイベント
+// テーマ変更イベント
+document.getElementById('theme-select').addEventListener('change', (e) => {
+  state.theme = e.target.value;
+  syncWaterUiFromState();
+  renderMapVectorLayer();
+  scheduleAutoSave();
+});
+
+// 要件①: 水域塗りつぶしON/OFFトグルイベント
+document.querySelectorAll('#water-fill-toggle .seg-opt').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.waterConfig.fillWater = (btn.dataset.fill === 'true');
+    syncWaterUiFromState();
+    renderMapVectorLayer();
+    scheduleAutoSave();
+  });
+});
+
+// 要件①: 水域の塗りつぶし色変更イベント
+document.getElementById('water-fill-color').addEventListener('input', (e) => {
+  state.waterConfig.fillColor = e.target.value;
+  document.getElementById('water-color-hex').textContent = state.waterConfig.fillColor;
+  renderMapVectorLayer();
+  scheduleAutoSave();
+});
+
+document.getElementById('btn-reset-water-color').addEventListener('click', () => {
+  state.waterConfig.fillColor = DEFAULT_LIGHT_WATER_COLOR;
+  syncWaterUiFromState();
+  renderMapVectorLayer();
+  scheduleAutoSave();
+  showToast('水域の塗りつぶし色を標準の薄い水色 (#e6f6ff) に戻しました');
+});
+
+// 要件①: 水際境界線の太さスライダーイベント
+document.getElementById('coast-stroke-width').addEventListener('input', (e) => {
+  state.waterConfig.coastStrokeWidth = Number(e.target.value);
+  document.getElementById('coast-width-val').textContent = `${state.waterConfig.coastStrokeWidth.toFixed(1)}px`;
+  renderMapVectorLayer();
+  scheduleAutoSave();
+});
+
+// 消しゴム設定UI
 document.getElementById('eraser-size').addEventListener('input', (e) => {
   state.eraser.size = Number(e.target.value);
   document.getElementById('eraser-size-val').textContent = `${state.eraser.size}px`;
@@ -1745,7 +1967,7 @@ document.getElementById('btn-clear-eraser').addEventListener('click', () => {
   scheduleAutoSave();
 });
 
-// ラベルインスペクターイベント
+// ラベルインスペクター
 document.querySelectorAll('#preset-grid .preset-chip').forEach(chip => {
   chip.addEventListener('click', () => {
     document.querySelectorAll('#preset-grid .preset-chip').forEach(c => c.classList.remove('active'));
@@ -1845,7 +2067,7 @@ document.getElementById('btn-auto-labels').addEventListener('click', () => {
   showToast(`✨ ${added}件の主要地名・駅ラベルを自動配置しました`);
 });
 
-// レイヤーON/OFF・テーマ変更
+// レイヤーON/OFF
 document.querySelectorAll('#layer-toggles .layer-card').forEach(card => {
   card.addEventListener('click', () => {
     const key = card.dataset.layer;
@@ -1854,12 +2076,6 @@ document.querySelectorAll('#layer-toggles .layer-card').forEach(card => {
     renderMapVectorLayer();
     scheduleAutoSave();
   });
-});
-
-document.getElementById('theme-select').addEventListener('change', (e) => {
-  state.theme = e.target.value;
-  renderMapVectorLayer();
-  scheduleAutoSave();
 });
 
 // ルート設定
@@ -1940,7 +2156,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 /* =========================================================================
-   14. 地図範囲・縮尺の細密選択モーダル (0.1刻み無段階ズーム + ガイド枠正確切り出し)
+   14. 地図範囲・縮尺の細密選択モーダル & SVG保存
    ========================================================================= */
 const mapModal = document.getElementById('map-modal');
 const fineZoomSlider = document.getElementById('fine-zoom-slider');
@@ -1957,9 +2173,6 @@ function syncModalZoomUi() {
   document.getElementById('modal-zoom-badge').textContent = `Zoom ${z.toFixed(1)} (取得タイル Z${tZoom}) / 16:10 切り出し枠`;
 }
 
-/**
- * モーダル中央の青い16:10ガイド枠（#crop-guide-box）が示す正確な経緯度Boundsを算出する
- */
 function getCropGuideBounds() {
   const mapEl = document.getElementById('leaflet-map');
   const guideEl = document.getElementById('crop-guide-box');
@@ -1982,7 +2195,6 @@ function getCropGuideBounds() {
 function openMapModal() {
   mapModal.classList.add('open');
   if (!leafletMap) {
-    // 0.1刻みの細かな縮尺調整を可能にするLeaflet設定
     leafletMap = L.map('leaflet-map', {
       zoomSnap: 0.1,
       zoomDelta: 0.2,
