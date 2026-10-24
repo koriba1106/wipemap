@@ -81,6 +81,7 @@ body {
 /* セグメントボタングループ */
 .segmented-actions {
   display: inline-flex;
+  align-items: center;
   background: var(--bg-subtle);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
@@ -108,6 +109,11 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
+.btn-seg:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .btn-seg-accent {
   background: var(--accent);
   color: #ffffff;
@@ -116,6 +122,23 @@ body {
 .btn-seg-accent:hover:not(:disabled) {
   background: var(--accent-hover);
   color: #ffffff;
+}
+
+.video-format-select {
+  height: 28px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-size: 0.74rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  padding: 0 6px;
+  cursor: pointer;
+}
+
+.video-format-select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 /* 標準ボタン */
