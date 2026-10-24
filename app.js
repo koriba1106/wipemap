@@ -6,7 +6,8 @@ import Pbf from 'https://esm.sh/pbf@3.2.1';
    ========================================================================= */
 const APP_SCHEMA_VERSION = '1.2.0';
 const STORAGE_AUTOSAVE_KEY = 'wipemap_studio_pro_autosave_v3';
-const DEFAULT_LIGHT_WATER_COLOR = '#e6f6ff'; // 標準の「かなり薄い水色」
+const DEFAULT_LIGHT_WATER_COLOR = '#e6f6ff';
+const BASE_PLAYBACK_DURATION_SEC = 5.0; // 標準(1.0x)の基準再生時間: きっちり5.0秒
 const SVG_W = 800;
 const SVG_H = 500;
 
@@ -15,14 +16,9 @@ const VALID_ANIM_TYPES = new Set(['pulse', 'bounce', 'walk', 'star', 'heart', 'c
 const VALID_ROUTE_STYLES = new Set(['dashed', 'solid', 'dots']);
 const VALID_ROUTE_CURVES = new Set(['catmull', 'linear']);
 const VALID_DETAIL_MODES = new Set(['auto', '9', '11', '13', '14', '16']);
+const VALID_VIDEO_FORMATS = new Set(['webm', 'mp4']);
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
 
-/**
- * テーマ定義
- * - isLineArt: true のテーマでは、陸地と水域（海・川・湖）の境界線を
- *   縁取りなしで `primaryLineColor`（線画と同一色）の太線として描画する
- * - sketchFilter: 手書き風1・2用のSVG変位フィルタID
- */
 const THEMES = Object.freeze({
   'tv-ivory': {
     transparent: false,
@@ -92,7 +88,7 @@ const THEMES = Object.freeze({
     transparent: true,
     isLineArt: true,
     sketchFilter: null,
-    primaryLineColor: '#1f2937', // 黒線画と同一色
+    primaryLineColor: '#1f2937',
     land: 'none',
     water: DEFAULT_LIGHT_WATER_COLOR,
     waterStroke: '#1f2937',
@@ -108,7 +104,7 @@ const THEMES = Object.freeze({
     transparent: true,
     isLineArt: true,
     sketchFilter: null,
-    primaryLineColor: '#ffffff', // 白線画と同一色
+    primaryLineColor: '#ffffff',
     land: 'none',
     water: DEFAULT_LIGHT_WATER_COLOR,
     waterStroke: '#ffffff',
@@ -121,11 +117,10 @@ const THEMES = Object.freeze({
     railDash: '#1f2937'
   },
   'hand-drawn-1': {
-    // ✎ 手書き風１：チャコールブラックのミリペン・サインペンスケッチ調（単線主体・細密揺らぎ）
     transparent: true,
     isLineArt: true,
     sketchFilter: 'url(#hand-drawn-filter-1)',
-    primaryLineColor: '#2c2523', // ペンインク色と同一
+    primaryLineColor: '#2c2523',
     land: 'none',
     water: DEFAULT_LIGHT_WATER_COLOR,
     waterStroke: '#2c2523',
@@ -138,11 +133,10 @@ const THEMES = Object.freeze({
     railDash: '#ffffff'
   },
   'hand-drawn-2': {
-    // ✒️ 手書き風２：手書き風１の派生。万年筆インディゴインク＋白抜き縁取り・ゆったりした手描き揺らぎ
     transparent: true,
     isLineArt: true,
     sketchFilter: 'url(#hand-drawn-filter-2)',
-    primaryLineColor: '#1e3a5f', // 万年筆ブルーブラックと同一
+    primaryLineColor: '#1e3a5f',
     land: 'none',
     water: DEFAULT_LIGHT_WATER_COLOR,
     waterStroke: '#1e3a5f',
@@ -229,8 +223,8 @@ function createDefaultProjectState() {
     theme: 'tv-ivory',
     waterConfig: {
       fillWater: true,
-      fillColor: DEFAULT_LIGHT_WATER_COLOR, // 標準：かなり薄い水色 (#e6f6ff)
-      coastStrokeWidth: 5.0                 // 通常の道路線より太い初期値 (5.0px)
+      fillColor: DEFAULT_LIGHT_WATER_COLOR,
+      coastStrokeWidth: 5.0
     },
     layers: {
       coast: true,
@@ -268,7 +262,8 @@ function createDefaultProjectState() {
     },
     animConfig: {
       animType: 'pulse',
-      speed: 1.0
+      speed: 1.0,
+      videoFormat: 'webm'
     }
   };
 }
@@ -299,6 +294,7 @@ const state = {
     animTimeSec: 0,
     animType: defaults.animConfig.animType,
     speed: defaults.animConfig.speed,
+    videoFormat: defaults.animConfig.videoFormat,
     rafId: null,
     lastTimestamp: 0
   }
@@ -319,7 +315,7 @@ function showToast(message, isError = false) {
     item.style.opacity = '0';
     item.style.transition = 'opacity 0.25s ease';
     setTimeout(() => item.remove(), 260);
-  }, 3000);
+  }, 3200);
 }
 
 function setHudStatus(msg, busy = false) {
@@ -355,7 +351,6 @@ function sanitizeProjectPayload(raw) {
   const def = createDefaultProjectState();
   const theme = Object.prototype.hasOwnProperty.call(THEMES, raw.theme) ? raw.theme : def.theme;
 
-  // 水域・水際境界線設定の検証
   const rw = (raw.waterConfig && typeof raw.waterConfig === 'object') ? raw.waterConfig : {};
   const waterConfig = {
     fillWater: rw.fillWater !== undefined ? Boolean(rw.fillWater) : def.waterConfig.fillWater,
@@ -448,7 +443,8 @@ function sanitizeProjectPayload(raw) {
   const ac = (raw.animConfig && typeof raw.animConfig === 'object') ? raw.animConfig : {};
   const animConfig = {
     animType: VALID_ANIM_TYPES.has(ac.animType) ? ac.animType : def.animConfig.animType,
-    speed: clampNumber(ac.speed, 0.2, 5.0, def.animConfig.speed)
+    speed: clampNumber(ac.speed, 0.2, 5.0, def.animConfig.speed),
+    videoFormat: VALID_VIDEO_FORMATS.has(ac.videoFormat) ? ac.videoFormat : def.animConfig.videoFormat
   };
 
   return {
@@ -483,7 +479,8 @@ function serializeCurrentProject() {
     routeConfig: { ...state.routeConfig },
     animConfig: {
       animType: state.playback.animType,
-      speed: state.playback.speed
+      speed: state.playback.speed,
+      videoFormat: state.playback.videoFormat
     }
   };
 }
@@ -516,6 +513,7 @@ async function applyProjectData(cleanData, fetchMap = true) {
   state.routeConfig = { ...cleanData.routeConfig };
   state.playback.animType = cleanData.animConfig.animType;
   state.playback.speed = cleanData.animConfig.speed;
+  state.playback.videoFormat = cleanData.animConfig.videoFormat || 'webm';
   state.playback.progress = 1.0;
 
   syncAllUiControlsFromState();
@@ -563,9 +561,20 @@ function syncWaterUiFromState() {
   if (widthVal) widthVal.textContent = `${Number(state.waterConfig.coastStrokeWidth).toFixed(1)}px`;
 }
 
+function syncVideoFormatUi() {
+  const fmtSelect = document.getElementById('video-format-select');
+  const exportBtn = document.getElementById('btn-export-video');
+  const fmt = state.playback.videoFormat === 'mp4' ? 'mp4' : 'webm';
+  if (fmtSelect) fmtSelect.value = fmt;
+  if (exportBtn) {
+    exportBtn.textContent = fmt === 'mp4' ? '🎬 動画出力 (MP4)' : '🎬 動画出力 (WebM)';
+  }
+}
+
 function syncAllUiControlsFromState() {
   document.getElementById('theme-select').value = state.theme;
   syncWaterUiFromState();
+  syncVideoFormatUi();
 
   document.querySelectorAll('#layer-toggles .layer-card').forEach(card => {
     const key = card.dataset.layer;
@@ -598,14 +607,13 @@ function syncAllUiControlsFromState() {
 const svg = d3.select('#wipe-svg');
 const defs = svg.append('defs');
 
-// 地図外枠クリップパス
 defs.append('clipPath')
   .attr('id', 'canvas-clip')
   .append('rect')
   .attr('x', 0).attr('y', 0)
   .attr('width', SVG_W).attr('height', SVG_H);
 
-// 要件②: 手書き風１フィルタ（ミリペン・サインペン調の細密なペン先揺らぎ）
+// 手書き風１フィルタ
 const filterHand1 = defs.append('filter')
   .attr('id', 'hand-drawn-filter-1')
   .attr('x', '-5%').attr('y', '-5%')
@@ -624,7 +632,7 @@ filterHand1.append('feDisplacementMap')
   .attr('xChannelSelector', 'R')
   .attr('yChannelSelector', 'G');
 
-// 要件②: 手書き風２フィルタ（少し変更を加えた、やわらかくゆったりした手描きイラスト揺らぎ）
+// 手書き風２フィルタ
 const filterHand2 = defs.append('filter')
   .attr('id', 'hand-drawn-filter-2')
   .attr('x', '-5%').attr('y', '-5%')
@@ -643,7 +651,7 @@ filterHand2.append('feDisplacementMap')
   .attr('xChannelSelector', 'R')
   .attr('yChannelSelector', 'G');
 
-// 消しゴム用SVGマスク（白＝表示、黒＝消去）
+// 消しゴム用SVGマスク
 const eraserMask = defs.append('mask')
   .attr('id', 'eraser-mask')
   .attr('maskUnits', 'userSpaceOnUse')
@@ -719,10 +727,6 @@ function resolveTileZoom(mapZoom, detailMode = 'auto') {
   return 16;
 }
 
-/**
- * タイル内部のLineStringまたはPolygon外周から、タイル境界（0 または extent=4096）に
- * 張り付いた人工クリップエッジを除外し、純粋な地理境界線だけをMultiLineStringとして抽出する
- */
 function extractCleanEdgesFromGeometry(rawFeat, tileX, tileY, tileZoom, closeRings = false) {
   const extent = rawFeat.extent || 4096;
   const margin = 2;
@@ -855,12 +859,10 @@ async function extractVectorMapFromBounds(bounds, mapZoom, detailMode = state.ma
         const props = rawFeat.properties || {};
 
         if (rawFeat.type === 3) {
-          // 水域ポリゴン（海・湖沼・大河川）
           if (ln === 'wa' || ln.includes('waterarea') || ln.includes('lake')) {
             const geo = rawFeat.toGeoJSON(x, y, activeTileZoom);
             categorized.waterArea.push(geo);
 
-            // 水涯線(wl/coastline)レイヤーが存在しないズーム帯では、水域ポリゴンから非タイル境界の輪郭線を抽出して補完
             if (!hasExplicitWaterLine) {
               const polyOutline = extractCleanEdgesFromGeometry(rawFeat, x, y, activeTileZoom, true);
               if (polyOutline) categorized.coastline.push(polyOutline);
@@ -922,14 +924,10 @@ async function extractVectorMapFromBounds(bounds, mapZoom, detailMode = state.ma
   setHudStatus(`線画生成完了（幹線:${categorized.majorRoads.length} / 街路:${categorized.minorRoads.length} / 水際:${categorized.coastline.length}）`, false);
 }
 
-/**
- * 地図ベクターレイヤーの描画（要件①の水域塗りつぶし・線画同一色太線輪郭 ＆ 要件②の手書き風フィルタ対応）
- */
 function renderMapVectorLayer() {
   const theme = THEMES[state.theme] || THEMES['tv-ivory'];
   const wipeFrame = document.getElementById('wipe-frame');
 
-  // 背景透過判定
   if (theme.transparent) {
     gBaseBg.attr('fill', 'none').attr('opacity', 0);
     wipeFrame.classList.add('transparent-checker');
@@ -938,7 +936,6 @@ function renderMapVectorLayer() {
     wipeFrame.classList.remove('transparent-checker');
   }
 
-  // 手書き風1・2のSVG変位フィルタ適用
   if (theme.sketchFilter) {
     gMapVector.attr('filter', theme.sketchFilter);
   } else {
@@ -951,10 +948,8 @@ function renderMapVectorLayer() {
   const { categorized, projection } = state.mapGeoData;
   const path = d3.geoPath().projection(projection);
 
-  // 1. 河川・湖沼・海の塗りつぶしと水際境界線（要件①）
   if (state.layers.coast) {
     const shouldFillWater = state.waterConfig.fillWater;
-    // 線画モード時またはカスタム時はユーザー指定の薄水色（標準 #e6f6ff）を使用
     const waterFillColor = theme.isLineArt
       ? state.waterConfig.fillColor
       : (state.waterConfig.fillColor !== DEFAULT_LIGHT_WATER_COLOR ? state.waterConfig.fillColor : theme.water);
@@ -964,14 +959,11 @@ function renderMapVectorLayer() {
         .data(categorized.waterArea).enter().append('path')
         .attr('d', path)
         .attr('fill', waterFillColor)
-        // タイル継ぎ目のアンチエイリアス隙間を埋めるための同色極細ストローク（縦横の境界線は一切出ない）
         .attr('stroke', waterFillColor)
         .attr('stroke-width', 0.7)
         .attr('stroke-linejoin', 'round');
     }
 
-    // 陸地と「河川・湖沼・海」との境界線
-    // 線画テーマ（isLineArt: true）では縁取り不要・線画の色と同一（theme.primaryLineColor）・調整可能な太線で描画
     const coastColor = theme.isLineArt ? theme.primaryLineColor : theme.waterStroke;
     const coastWidth = Number(state.waterConfig.coastStrokeWidth) || 5.0;
 
@@ -985,7 +977,6 @@ function renderMapVectorLayer() {
       .attr('stroke-linejoin', 'round');
   }
 
-  // 2. 市区町村界
   if (state.layers.border) {
     const borderDash = state.theme === 'hand-drawn-2' ? '3,5' : '6,4';
     gMapVector.append('g').selectAll('path')
@@ -998,7 +989,6 @@ function renderMapVectorLayer() {
       .attr('stroke-linecap', 'round');
   }
 
-  // 3. 地域道路
   if (state.layers.minorRoad) {
     const gMinor = gMapVector.append('g');
     if (theme.minorCase && theme.minorCase !== 'none') {
@@ -1012,7 +1002,6 @@ function renderMapVectorLayer() {
       .attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
   }
 
-  // 4. 幹線道路
   if (state.layers.majorRoad) {
     const gMajor = gMapVector.append('g');
     if (theme.majorCase && theme.majorCase !== 'none') {
@@ -1026,7 +1015,6 @@ function renderMapVectorLayer() {
       .attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
   }
 
-  // 5. 橋梁強調
   if (state.layers.bridge) {
     const gBridge = gMapVector.append('g');
     const bridgeOuter = theme.isLineArt ? theme.primaryLineColor : '#334155';
@@ -1039,7 +1027,6 @@ function renderMapVectorLayer() {
       .attr('stroke-width', 4.2).attr('stroke-linecap', 'butt');
   }
 
-  // 6. 鉄道
   if (state.layers.rail) {
     const gRail = gMapVector.append('g');
     gRail.selectAll('.rb').data(categorized.railways).enter().append('path')
@@ -1500,7 +1487,7 @@ function startDragRouteVertex(startEvent, idx) {
 }
 
 /* =========================================================================
-   11. ライブ再生制御 ＆ アニメーション動画出力 (WebM)
+   11. ライブ再生制御 ＆ 定尺アニメーション動画出力エンジン (WebM / MP4)
    ========================================================================= */
 const playBtn = document.getElementById('btn-play-toggle');
 const progressSlider = document.getElementById('route-progress');
@@ -1534,7 +1521,7 @@ function stepPlayback(timestamp) {
   state.playback.lastTimestamp = timestamp;
   state.playback.animTimeSec += dt;
 
-  state.playback.progress += (dt / 5.0) * state.playback.speed;
+  state.playback.progress += (dt / BASE_PLAYBACK_DURATION_SEC) * state.playback.speed;
   if (state.playback.progress >= 1) {
     state.playback.progress = 1;
     progressSlider.value = 1000;
@@ -1567,21 +1554,22 @@ document.getElementById('anim-speed-select').addEventListener('change', (e) => {
   scheduleAutoSave();
 });
 
-function renderCurrentSvgToCanvas(ctx, width, height) {
-  return new Promise((resolve, reject) => {
-    const clone = svg.node().cloneNode(true);
-    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    clone.setAttribute('width', width);
-    clone.setAttribute('height', height);
-    const overlay = clone.querySelector('#layer-ui-overlay');
-    if (overlay) overlay.remove();
+document.getElementById('video-format-select').addEventListener('change', (e) => {
+  state.playback.videoFormat = VALID_VIDEO_FORMATS.has(e.target.value) ? e.target.value : 'webm';
+  syncVideoFormatUi();
+  scheduleAutoSave();
+});
 
-    const xml = new XMLSerializer().serializeToString(clone);
+/**
+ * 任意のSVG DOMノードを指定サイズでImageオブジェクトとしてデコードしCanvasに描画する
+ */
+function drawSvgNodeToContext(svgElement, ctx, width, height) {
+  return new Promise((resolve, reject) => {
+    const xml = new XMLSerializer().serializeToString(svgElement);
     const blob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
-      ctx.clearRect(0, 0, width, height);
       ctx.drawImage(img, 0, 0, width, height);
       URL.revokeObjectURL(url);
       resolve();
@@ -1594,17 +1582,341 @@ function renderCurrentSvgToCanvas(ctx, width, height) {
   });
 }
 
+/**
+ * 1) 録画開始前に重たい「背景＋地図ベクター（手書きフィルタ・消しゴムマスク込み）」だけを
+ *    1回だけオフスクリーンCanvasへベイク（ラスタライズ）してキャッシュする
+ */
+async function bakeStaticMapCanvas(width, height, forceOpaqueBgColor = null) {
+  const staticCanvas = document.createElement('canvas');
+  staticCanvas.width = width;
+  staticCanvas.height = height;
+  const sCtx = staticCanvas.getContext('2d');
+
+  if (forceOpaqueBgColor) {
+    sCtx.fillStyle = forceOpaqueBgColor;
+    sCtx.fillRect(0, 0, width, height);
+  }
+
+  const clone = svg.node().cloneNode(true);
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  clone.setAttribute('width', width);
+  clone.setAttribute('height', height);
+
+  // 動的レイヤー・ラベル・クレジット・UIオーバーレイを除去し、背景と地図線画のみ残す
+  ['#layer-route', '#layer-labels', '#layer-current-marker', '#layer-credit', '#layer-ui-overlay'].forEach(sel => {
+    const el = clone.querySelector(sel);
+    if (el) el.remove();
+  });
+
+  await drawSvgNodeToContext(clone, sCtx, width, height);
+  return staticCanvas;
+}
+
+/**
+ * 2) 各フレームの動的オーバーレイ（ルート・ラベル・現在地マーカー・クレジット）のみを高速描画
+ */
+async function renderDynamicOverlayToContext(ctx, width, height) {
+  const clone = svg.node().cloneNode(true);
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  clone.setAttribute('width', width);
+  clone.setAttribute('height', height);
+
+  // すでに staticMapCanvas にベイク済みの重い地図レイヤーと不要なUIオーバーレイを除去
+  ['#layer-base-bg', '#layer-map-vector', '#layer-ui-overlay'].forEach(sel => {
+    const el = clone.querySelector(sel);
+    if (el) el.remove();
+  });
+
+  await drawSvgNodeToContext(clone, ctx, width, height);
+}
+
+/**
+ * WebCodecs API + mp4-muxer による厳密タイムスタンプ MP4 エンコード
+ * （1フレームの誤差もなく targetDurationSec と完全一致するMP4を生成）
+ */
+async function encodeFramesWithWebCodecsMp4(frames, width, height, fps) {
+  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
+    return null;
+  }
+
+  let Mp4MuxerMod = null;
+  try {
+    Mp4MuxerMod = await import('https://esm.sh/mp4-muxer@5.1.3');
+  } catch {
+    return null;
+  }
+
+  const codecCandidates = [
+    'avc1.4d002a', // Main Profile Level 4.2
+    'avc1.420028', // Baseline Profile Level 4.0
+    'avc1.640028'  // High Profile Level 4.0
+  ];
+
+  let supportedConfig = null;
+  for (const codec of codecCandidates) {
+    try {
+      const check = await VideoEncoder.isConfigSupported({
+        codec,
+        width,
+        height,
+        bitrate: 6_000_000,
+        framerate: fps
+      });
+      if (check && check.supported) {
+        supportedConfig = check.config;
+        break;
+      }
+    } catch {
+      // try next codec
+    }
+  }
+  if (!supportedConfig) return null;
+
+  const muxer = new Mp4MuxerMod.Muxer({
+    target: new Mp4MuxerMod.ArrayBufferTarget(),
+    video: {
+      codec: 'avc',
+      width,
+      height
+    },
+    fastStart: 'in-memory'
+  });
+
+  let encoderError = null;
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: (err) => { encoderError = err; }
+  });
+
+  encoder.configure(supportedConfig);
+
+  const frameDurationUs = Math.round(1_000_000 / fps);
+  for (let i = 0; i < frames.length; i++) {
+    if (encoderError) throw encoderError;
+    const timestampUs = Math.round((i / fps) * 1_000_000);
+    const vf = new VideoFrame(frames[i], {
+      timestamp: timestampUs,
+      duration: frameDurationUs
+    });
+    encoder.encode(vf, { keyFrame: i % fps === 0 });
+    vf.close();
+  }
+
+  await encoder.flush();
+  encoder.close();
+  if (encoderError) throw encoderError;
+
+  muxer.finalize();
+  return new Blob([muxer.target.buffer], { type: 'video/mp4' });
+}
+
+/**
+ * WebCodecs API + webm-muxer による厳密タイムスタンプ WebM エンコード（非透過テーマ時）
+ */
+async function encodeFramesWithWebCodecsWebm(frames, width, height, fps) {
+  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
+    return null;
+  }
+
+  let WebmMuxerMod = null;
+  try {
+    WebmMuxerMod = await import('https://esm.sh/webm-muxer@5.0.3');
+  } catch {
+    return null;
+  }
+
+  const codecCandidates = [
+    { webCodec: 'vp09.00.10.08', muxCodec: 'V_VP9' },
+    { webCodec: 'vp8', muxCodec: 'V_VP8' }
+  ];
+
+  let chosen = null;
+  for (const item of codecCandidates) {
+    try {
+      const check = await VideoEncoder.isConfigSupported({
+        codec: item.webCodec,
+        width,
+        height,
+        bitrate: 6_000_000,
+        framerate: fps
+      });
+      if (check && check.supported) {
+        chosen = { config: check.config, muxCodec: item.muxCodec };
+        break;
+      }
+    } catch {
+      // try next
+    }
+  }
+  if (!chosen) return null;
+
+  const muxer = new WebmMuxerMod.Muxer({
+    target: new WebmMuxerMod.ArrayBufferTarget(),
+    video: {
+      codec: chosen.muxCodec,
+      width,
+      height,
+      frameRate: fps
+    }
+  });
+
+  let encoderError = null;
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: (err) => { encoderError = err; }
+  });
+
+  encoder.configure(chosen.config);
+
+  const frameDurationUs = Math.round(1_000_000 / fps);
+  for (let i = 0; i < frames.length; i++) {
+    if (encoderError) throw encoderError;
+    const timestampUs = Math.round((i / fps) * 1_000_000);
+    const vf = new VideoFrame(frames[i], {
+      timestamp: timestampUs,
+      duration: frameDurationUs
+    });
+    encoder.encode(vf, { keyFrame: i % fps === 0 });
+    vf.close();
+  }
+
+  await encoder.flush();
+  encoder.close();
+  if (encoderError) throw encoderError;
+
+  muxer.finalize();
+  return new Blob([muxer.target.buffer], { type: 'video/webm' });
+}
+
+/**
+ * MediaRecorder による実時間クロック厳密同期エンコード
+ * （事前生成済みの ImageBitmap 配列を targetDurationSec 秒間きっちりで送出し、
+ *   レンダリング時間が動画尺に一切影響しないことを保証する）
+ */
+async function encodeFramesWithRealtimeMediaRecorder(frames, width, height, fps, targetDurationSec, format, bannerText) {
+  const playbackCanvas = document.createElement('canvas');
+  playbackCanvas.width = width;
+  playbackCanvas.height = height;
+  const pCtx = playbackCanvas.getContext('2d');
+
+  // 最初のフレームをセット
+  pCtx.clearRect(0, 0, width, height);
+  pCtx.drawImage(frames[0], 0, 0, width, height);
+
+  const mp4Candidates = [
+    'video/mp4;codecs=avc1.42E01E',
+    'video/mp4;codecs=avc1',
+    'video/mp4'
+  ];
+  const webmCandidates = [
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm'
+  ];
+
+  const primaryList = format === 'mp4' ? mp4Candidates : webmCandidates;
+  const fallbackList = format === 'mp4' ? webmCandidates : mp4Candidates;
+
+  let selectedMime = primaryList.find(m => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) || '';
+  let actualExt = format;
+  if (!selectedMime) {
+    selectedMime = fallbackList.find(m => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) || '';
+    actualExt = selectedMime.includes('mp4') ? 'mp4' : 'webm';
+  }
+
+  const stream = playbackCanvas.captureStream(fps);
+  const videoTrack = stream.getVideoTracks()[0];
+  const recorder = new MediaRecorder(
+    stream,
+    selectedMime ? { mimeType: selectedMime, videoBitsPerSecond: 6_000_000 } : { videoBitsPerSecond: 6_000_000 }
+  );
+
+  const chunks = [];
+  recorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) chunks.push(e.data);
+  };
+
+  const recordingStopped = new Promise((resolve) => {
+    recorder.onstop = resolve;
+  });
+
+  const targetDurationMs = targetDurationSec * 1000;
+  let lastDrawnIdx = -1;
+
+  recorder.start();
+  const startTime = performance.now();
+
+  try {
+    await new Promise((resolve) => {
+      const intervalId = setInterval(() => {
+        if (state.playback.cancelRecordingRequested) {
+          clearInterval(intervalId);
+          resolve();
+          return;
+        }
+
+        const elapsedMs = performance.now() - startTime;
+        if (elapsedMs >= targetDurationMs) {
+          // 最終フレームを確実に描画して正確に targetDurationMs で録画終了
+          const finalIdx = frames.length - 1;
+          if (lastDrawnIdx !== finalIdx) {
+            pCtx.clearRect(0, 0, width, height);
+            pCtx.drawImage(frames[finalIdx], 0, 0, width, height);
+            if (videoTrack && typeof videoTrack.requestFrame === 'function') {
+              try { videoTrack.requestFrame(); } catch { /* ignore */ }
+            }
+          }
+          clearInterval(intervalId);
+          resolve();
+          return;
+        }
+
+        const ratio = Math.min(1, Math.max(0, elapsedMs / targetDurationMs));
+        const frameIdx = Math.min(frames.length - 1, Math.floor(ratio * frames.length));
+        if (frameIdx !== lastDrawnIdx) {
+          lastDrawnIdx = frameIdx;
+          pCtx.clearRect(0, 0, width, height);
+          pCtx.drawImage(frames[frameIdx], 0, 0, width, height);
+          if (videoTrack && typeof videoTrack.requestFrame === 'function') {
+            try { videoTrack.requestFrame(); } catch { /* ignore */ }
+          }
+        }
+
+        const remainSec = Math.max(0, (targetDurationMs - elapsedMs) / 1000).toFixed(1);
+        bannerText.textContent = `定尺エンコード中... 残り ${remainSec}秒`;
+      }, 10);
+    });
+  } finally {
+    if (recorder.state !== 'inactive') {
+      recorder.stop();
+    }
+    await recordingStopped;
+    stream.getTracks().forEach(t => t.stop());
+  }
+
+  const blob = new Blob(chunks, { type: selectedMime || (actualExt === 'mp4' ? 'video/mp4' : 'video/webm') });
+  return { blob, ext: actualExt };
+}
+
+/**
+ * アニメーション付き動画出力（再生時間＝出力動画時間を完全保証）
+ */
 async function exportAnimationVideo() {
   if (state.playback.recording) return;
   stopPlayback();
 
   const exportBtn = document.getElementById('btn-export-video');
+  const formatSelect = document.getElementById('video-format-select');
   const banner = document.getElementById('recording-banner');
   const bannerText = document.getElementById('recording-status-text');
+
+  const requestedFormat = VALID_VIDEO_FORMATS.has(state.playback.videoFormat) ? state.playback.videoFormat : 'webm';
+  const themeObj = THEMES[state.theme] || THEMES['tv-ivory'];
 
   state.playback.recording = true;
   state.playback.cancelRecordingRequested = false;
   exportBtn.disabled = true;
+  if (formatSelect) formatSelect.disabled = true;
   banner.hidden = false;
   eraserCursor.style('display', 'none');
   renderLabelsLayer();
@@ -1612,81 +1924,124 @@ async function exportAnimationVideo() {
   const REC_W = 1280;
   const REC_H = 800;
   const FPS = 30;
-  const baseDurationSec = 5.0 / state.playback.speed;
-  const tailHoldSec = 1.0;
-  const totalSec = baseDurationSec + tailHoldSec;
-  const totalFrames = Math.ceil(totalSec * FPS);
+  // 再生ボタンの再生時間と100%同一の尺（標準1.0xできっちり5.0秒）
+  const targetDurationSec = BASE_PLAYBACK_DURATION_SEC / state.playback.speed;
+  const totalFrames = Math.max(2, Math.round(targetDurationSec * FPS));
 
-  const canvas = document.createElement('canvas');
-  canvas.width = REC_W;
-  canvas.height = REC_H;
-  const ctx = canvas.getContext('2d');
-
-  const mimeCandidates = [
-    'video/webm;codecs=vp9',
-    'video/webm;codecs=vp8',
-    'video/webm'
-  ];
-  const selectedMime = mimeCandidates.find(m => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) || '';
-
-  const stream = canvas.captureStream(FPS);
-  const recorder = new MediaRecorder(stream, selectedMime ? { mimeType: selectedMime, videoBitsPerSecond: 6000000 } : undefined);
-  const chunks = [];
-
-  recorder.ondataavailable = (e) => {
-    if (e.data && e.data.size > 0) chunks.push(e.data);
-  };
-
-  const recordingDone = new Promise((resolve) => {
-    recorder.onstop = resolve;
-  });
-
-  recorder.start();
+  const preRenderedFrames = [];
 
   try {
-    for (let f = 0; f <= totalFrames; f++) {
+    setHudStatus(`動画出力準備中（目標再生時間: ${targetDurationSec.toFixed(1)}秒 / ${totalFrames}フレーム）...`, true);
+    bannerText.textContent = '背景レイヤーを最適化ベイク中...';
+
+    // MP4は規格上アルファチャンネル非対応のため、透過テーマでMP4選択時は視認性に合わせた不透明背景色を自動補完
+    let forceOpaqueBg = null;
+    if (requestedFormat === 'mp4' && themeObj.transparent) {
+      forceOpaqueBg = state.theme === 'line-trans-light' ? '#1e293b' : '#ffffff';
+    }
+
+    // フェーズ1: 録画開始前に全フレームをオフラインで高速プリレンダリング
+    const staticMapCanvas = await bakeStaticMapCanvas(REC_W, REC_H, forceOpaqueBg);
+
+    const workCanvas = document.createElement('canvas');
+    workCanvas.width = REC_W;
+    workCanvas.height = REC_H;
+    const wCtx = workCanvas.getContext('2d');
+
+    for (let f = 0; f < totalFrames; f++) {
       if (state.playback.cancelRecordingRequested) break;
 
-      const tSec = f / FPS;
+      const ratio = totalFrames > 1 ? f / (totalFrames - 1) : 1.0;
+      const tSec = ratio * targetDurationSec;
+
       state.playback.animTimeSec = tSec;
-      state.playback.progress = Math.min(1.0, tSec / baseDurationSec);
-      progressSlider.value = Math.round(state.playback.progress * 1000);
+      state.playback.progress = ratio;
+      progressSlider.value = Math.round(ratio * 1000);
 
       renderRouteAndMarker();
-      await renderCurrentSvgToCanvas(ctx, REC_W, REC_H);
 
-      const pct = Math.round((f / totalFrames) * 100);
-      bannerText.textContent = `動画レンダリング中... (${pct}%)`;
+      wCtx.clearRect(0, 0, REC_W, REC_H);
+      wCtx.drawImage(staticMapCanvas, 0, 0, REC_W, REC_H);
+      await renderDynamicOverlayToContext(wCtx, REC_W, REC_H);
 
-      await new Promise(r => setTimeout(r, 1000 / FPS));
+      const frameBitmap = await createImageBitmap(workCanvas);
+      preRenderedFrames.push(frameBitmap);
+
+      const pct = Math.round(((f + 1) / totalFrames) * 100);
+      bannerText.textContent = `フレーム事前生成中... (${pct}%)`;
+
+      // UIスレッドの応答性を保つためのマイクロタスク譲歩
+      if (f % 3 === 0) {
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+
+    if (!state.playback.cancelRecordingRequested && preRenderedFrames.length === totalFrames) {
+      // フェーズ2: 厳密なタイムスタンプで動画コンテナへエンコード
+      bannerText.textContent = `${requestedFormat.toUpperCase()} 動画をエンコード中...`;
+
+      let finalBlob = null;
+      let finalExt = requestedFormat;
+
+      if (requestedFormat === 'mp4') {
+        finalBlob = await encodeFramesWithWebCodecsMp4(preRenderedFrames, REC_W, REC_H, FPS);
+        if (!finalBlob) {
+          const fallbackRes = await encodeFramesWithRealtimeMediaRecorder(
+            preRenderedFrames, REC_W, REC_H, FPS, targetDurationSec, 'mp4', bannerText
+          );
+          finalBlob = fallbackRes.blob;
+          finalExt = fallbackRes.ext;
+        }
+      } else {
+        // WebM出力：非透過テーマ時はWebCodecs直接エンコードを試み、透過テーマ時（アルファ保持）は実時間厳密同期MediaRecorderを使用
+        if (!themeObj.transparent) {
+          finalBlob = await encodeFramesWithWebCodecsWebm(preRenderedFrames, REC_W, REC_H, FPS);
+        }
+        if (!finalBlob) {
+          const recRes = await encodeFramesWithRealtimeMediaRecorder(
+            preRenderedFrames, REC_W, REC_H, FPS, targetDurationSec, 'webm', bannerText
+          );
+          finalBlob = recRes.blob;
+          finalExt = recRes.ext;
+        }
+      }
+
+      if (!state.playback.cancelRecordingRequested && finalBlob && finalBlob.size > 0) {
+        const url = URL.createObjectURL(finalBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `wipemap_${targetDurationSec.toFixed(1)}s_${Date.now()}.${finalExt}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+        showToast(`🎬 ${finalExt.toUpperCase()}動画（再生時間: ${targetDurationSec.toFixed(1)}秒）を書き出しました`);
+        setHudStatus(`${finalExt.toUpperCase()}動画（${targetDurationSec.toFixed(1)}秒）の書き出しが完了しました`, false);
+      }
+    }
+
+    if (state.playback.cancelRecordingRequested) {
+      showToast('動画出力を中断しました');
+      setHudStatus('動画出力を中断しました', false);
     }
   } catch (err) {
     console.error('Video export error:', err);
     showToast('動画出力中にエラーが発生しました', true);
+    setHudStatus('動画出力中にエラーが発生しました', false);
   } finally {
-    if (recorder.state !== 'inactive') recorder.stop();
-    await recordingDone;
-
-    if (!state.playback.cancelRecordingRequested && chunks.length > 0) {
-      const blob = new Blob(chunks, { type: selectedMime || 'video/webm' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `wipemap_animation_${Date.now()}.webm`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
-      showToast('🎬 アニメーション動画 (WebM) を書き出しました');
-      setHudStatus('アニメーション動画 (WebM) の書き出しが完了しました');
-    } else if (state.playback.cancelRecordingRequested) {
-      showToast('動画レンダリングを中断しました');
-      setHudStatus('動画出力を中断しました');
+    // 生成した全 ImageBitmap のGPUメモリを1枚残らず確実に解放
+    for (const bmp of preRenderedFrames) {
+      try { bmp.close(); } catch { /* ignore */ }
     }
+    preRenderedFrames.length = 0;
 
     state.playback.recording = false;
     state.playback.cancelRecordingRequested = false;
+    state.playback.progress = 1.0;
+    progressSlider.value = 1000;
     exportBtn.disabled = false;
+    if (formatSelect) formatSelect.disabled = false;
     banner.hidden = true;
     renderLabelsLayer();
     renderRouteAndMarker();
@@ -1913,7 +2268,7 @@ document.getElementById('theme-select').addEventListener('change', (e) => {
   scheduleAutoSave();
 });
 
-// 要件①: 水域塗りつぶしON/OFFトグルイベント
+// 水域塗りつぶしON/OFFトグルイベント
 document.querySelectorAll('#water-fill-toggle .seg-opt').forEach(btn => {
   btn.addEventListener('click', () => {
     state.waterConfig.fillWater = (btn.dataset.fill === 'true');
@@ -1923,7 +2278,7 @@ document.querySelectorAll('#water-fill-toggle .seg-opt').forEach(btn => {
   });
 });
 
-// 要件①: 水域の塗りつぶし色変更イベント
+// 水域の塗りつぶし色変更イベント
 document.getElementById('water-fill-color').addEventListener('input', (e) => {
   state.waterConfig.fillColor = e.target.value;
   document.getElementById('water-color-hex').textContent = state.waterConfig.fillColor;
@@ -1939,7 +2294,7 @@ document.getElementById('btn-reset-water-color').addEventListener('click', () =>
   showToast('水域の塗りつぶし色を標準の薄い水色 (#e6f6ff) に戻しました');
 });
 
-// 要件①: 水際境界線の太さスライダーイベント
+// 水際境界線の太さスライダーイベント
 document.getElementById('coast-stroke-width').addEventListener('input', (e) => {
   state.waterConfig.coastStrokeWidth = Number(e.target.value);
   document.getElementById('coast-width-val').textContent = `${state.waterConfig.coastStrokeWidth.toFixed(1)}px`;
