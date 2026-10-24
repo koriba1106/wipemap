@@ -36,10 +36,14 @@
         <input type="file" id="project-file-input" accept=".json,application/json" hidden>
       </div>
 
-      <!-- 書き出しグループ -->
+      <!-- 書き出しグループ（WebM / MP4 形式選択対応） -->
       <div class="segmented-actions" role="group" aria-label="ファイル書き出し">
         <button type="button" class="btn-seg" id="btn-export-svg" title="ベクターSVG画像として書き出し">💾 SVG出力</button>
-        <button type="button" class="btn-seg btn-seg-accent" id="btn-export-video" title="アニメーション付きWebM動画を書き出し">🎬 動画出力 (WebM)</button>
+        <select id="video-format-select" class="video-format-select" aria-label="動画出力形式" title="出力する動画フォーマットを選択">
+          <option value="webm" selected>WebM (透過対応)</option>
+          <option value="mp4">MP4 (汎用H.264)</option>
+        </select>
+        <button type="button" class="btn-seg btn-seg-accent" id="btn-export-video" title="再生時間と完全一致するアニメーション動画を書き出し">🎬 動画出力 (WebM)</button>
       </div>
     </div>
   </header>
@@ -85,7 +89,7 @@
       <!-- 動画レンダリング中バナー -->
       <div class="recording-banner" id="recording-banner" hidden>
         <span class="rec-dot"></span>
-        <span id="recording-status-text">動画レンダリング中... (0%)</span>
+        <span id="recording-status-text">動画フレーム生成中... (0%)</span>
         <button type="button" class="btn-rec-cancel" id="btn-cancel-video">中断 (Esc)</button>
       </div>
 
@@ -110,10 +114,10 @@
           <option value="flag">⑦ フラッグ揺れ</option>
         </select>
         <select id="anim-speed-select" class="dock-select" aria-label="再生速度">
-          <option value="0.6">0.6x (ゆっくり)</option>
-          <option value="1" selected>1.0x (標準 5秒)</option>
-          <option value="1.8">1.8x (速め)</option>
-          <option value="2.5">2.5x (高速)</option>
+          <option value="0.6">0.6x (ゆっくり 8.3秒)</option>
+          <option value="1" selected>1.0x (標準 5.0秒)</option>
+          <option value="1.8">1.8x (速め 2.8秒)</option>
+          <option value="2.5">2.5x (高速 2.0秒)</option>
         </select>
       </div>
 
@@ -150,7 +154,7 @@
           </select>
         </div>
 
-        <!-- 要件①: 河川・湖沼・海の塗りつぶし＆水際境界線設定 -->
+        <!-- 河川・湖沼・海の塗りつぶし＆水際境界線設定 -->
         <div class="pane-block water-custom-block" id="water-config-block">
           <div class="form-label">
             <span>🌊 河川・湖沼・海の表現</span>
